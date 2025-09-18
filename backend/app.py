@@ -44,7 +44,7 @@ CORS(
 
 @app.route("/test", methods=["GET"])
 def get_api_test():
-    return "esto es un test de contacto"
+    return "esto es un test de contacto solo"
 
 def require_auth(f):
     @wraps(f)
