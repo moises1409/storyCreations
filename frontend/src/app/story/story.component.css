@@ -1,0 +1,9 @@
+/* Reuse dashboard styles; only overrides if needed */
+.small.selected { border-color: var(--primary-green); background: rgba(0,255,136,0.1); }
+
+.dashboard-container.main-with-sidebar { padding-left: calc(var(--sidebar-width) + var(--sidebar-gap)); box-sizing: border-box; }
+
+@media (max-width: 900px) {
+  .dashboard-container.main-with-sidebar { padding-left: 30px; }
+}
+

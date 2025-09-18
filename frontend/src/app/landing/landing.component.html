@@ -1,0 +1,159 @@
+<div class="landing-container">
+  <!-- Navigation Bar -->
+  <nav class="nav-bar">
+    <div class="nav-content">
+      <div class="nav-logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="18" cy="5" r="3" stroke="currentColor" stroke-width="2"/>
+            <circle cx="6" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+            <circle cx="18" cy="19" r="3" stroke="currentColor" stroke-width="2"/>
+            <path d="M8.59 13.51l6.83 3.98" stroke="currentColor" stroke-width="2"/>
+            <path d="M15.41 6.51l-6.82 3.98" stroke="currentColor" stroke-width="2"/>
+          </svg>
+        </div>
+        
+        <span class="logo-accent">Linked-Ideas</span>
+      </div>
+      <div class="nav-links">
+        <button (click)="openSignIn()" class="nav-link">Sign In</button>
+        <button (click)="openSignup()" class="nav-link nav-link-primary">Sign Up</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero" id="hero">
+    <div class="hero-content">
+      <h1 class="hero-title">Create Emotional Video Stories From a Single Prompt</h1>
+      <p class="hero-subtitle">
+        Type your idea and instantly get an engaging video tailored for YouTube, social media, or bedtime stories for kids.
+      </p>
+      <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+        <button class="cta-button" (click)="onPrimaryCta()">
+          <span class="button-text">Create a Story Video</span>
+          <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="cta-button-secondary" (click)="scrollToHowItWorks()">See How It Works</button>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="idea-cards">
+        <div class="idea-card card-1">
+          <div class="card-icon">🎬</div>
+          <div class="card-content">
+            <h3>Prompt → Video</h3>
+            <p>Script, scenes, and voiceover from one idea.</p>
+          </div>
+        </div>
+        <div class="idea-card card-2">
+          <div class="card-icon">💚</div>
+          <div class="card-content">
+            <h3>Emotion Styles</h3>
+            <p>Heartwarming, adventurous, dramatic.</p>
+          </div>
+        </div>
+        <div class="idea-card card-3">
+          <div class="card-icon">🎵</div>
+          <div class="card-content">
+            <h3>Voices & Music</h3>
+            <p>Natural voiceovers and soundtrack.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section class="features">
+    <h2 class="section-title">Why Choose Linked-Ideas?</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🎬</div>
+        <h3>Prompt → Video</h3>
+        <p>Turn any idea into a full video with script, scenes, and voiceover.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💚</div>
+        <h3>Emotion Styles</h3>
+        <p>Heartwarming, adventurous, dramatic — choose the mood.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🎵</div>
+        <h3>Voices & Music</h3>
+        <p>Natural voiceovers and soundtrack to match the story.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📤</div>
+        <h3>Export & Share</h3>
+        <p>Download MP4, share to YouTube or social in one click.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works Section -->
+  <section class="how-it-works" id="how-it-works">
+    <h2 class="section-title">How It Works</h2>
+    <div class="steps-container">
+      <div class="step">
+        <div class="step-number">1</div>
+        <h3>Describe your idea</h3>
+        <p>Write a short prompt about your story or topic.</p>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <h3>Pick a style</h3>
+        <p>Choose mood, audience, and platform format.</p>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <h3>Generate & preview</h3>
+        <p>We assemble scenes, voice, and music automatically.</p>
+      </div>
+      <div class="step">
+        <div class="step-number">4</div>
+        <h3>Edit & export</h3>
+        <p>Tweak details and export in the right format.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section class="cta-section">
+    <div class="cta-content">
+      <h2>Bring Your Stories to Life Today</h2>
+      <p>Create videos for YouTube, social media, or bedtime stories — all from one prompt.</p>
+      <button class="cta-button-secondary" (click)="onPrimaryCta()">Start Creating for Free</button>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-content">
+      <div class="footer-logo">
+        <div class="footer-logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="18" cy="5" r="3" stroke="currentColor" stroke-width="2"/>
+            <circle cx="6" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+            <circle cx="18" cy="19" r="3" stroke="currentColor" stroke-width="2"/>
+            <path d="M8.59 13.51l6.83 3.98" stroke="currentColor" stroke-width="2"/>
+            <path d="M15.41 6.51l-6.82 3.98" stroke="currentColor" stroke-width="2"/>
+          </svg>
+        </div>
+        <span class="logo-text">Linked</span>
+        <span class="logo-accent">Ideas</span>
+      </div>
+      <p class="footer-tagline">Connecting visionaries with opportunity</p>
+      <div class="footer-links">
+        <a href="#" class="footer-link">Privacy Policy</a>
+        <a href="#" class="footer-link">Terms of Service</a>
+        <a href="#" class="footer-link">Contact Us</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Auth Modals -->
+  <app-auth-modal-container></app-auth-modal-container>
+</div>

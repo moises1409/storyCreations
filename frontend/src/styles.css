@@ -1,0 +1,85 @@
+/* Global Styles for Linked-Ideas */
+:root {
+  --primary-green: #00ff88;
+  --secondary-green: #00cc6a;
+  --black: #000000;
+  --dark-gray: #111111;
+  --medium-gray: #222222;
+  --light-gray: #333333;
+  --white: #ffffff;
+  --text-gray: #cccccc;
+  --sidebar-width: 240px;
+  --sidebar-gap: 28px;
+  --sidebar-bg: #1c1b1b; /* slightly different tone from main bg */
+}
+
+*, html { 
+  margin: 0; 
+  padding: 0; 
+  box-sizing: border-box; 
+}
+
+html { 
+  scroll-behavior: smooth; 
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--black);
+  color: var(--white);
+  overflow-x: hidden;
+}
+
+/* Layout helper when using fixed left sidebar */
+.main-with-sidebar {
+  padding-left: calc(var(--sidebar-width) + var(--sidebar-gap));
+  box-sizing: border-box;
+}
+
+@media (max-width: 1024px) {
+  :root { --sidebar-width: 220px; }
+}
+
+/* Common Button Styles */
+.btn {
+  border: none;
+  border-radius: 50px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-primary {
+  background: linear-gradient(45deg, var(--primary-green), var(--secondary-green));
+  color: var(--black);
+  box-shadow: 0 10px 30px rgba(0, 255, 136, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 15px 40px rgba(0, 255, 136, 0.4);
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 3px solid var(--primary-green);
+  color: var(--primary-green);
+}
+
+.btn-secondary:hover {
+  background: var(--primary-green);
+  color: var(--black);
+  transform: translateY(-2px);
+}
+
+/* Common Layout */
+.section { padding: 6rem 2rem; }
+.container { max-width: 1200px; margin: 0 auto; }
+.text-center { text-align: center; }
+.flex { display: flex; }
+.grid { display: grid; gap: 2rem; }
+.grid-auto { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }

@@ -1,0 +1,41 @@
+<nav class="auth-nav side-nav" [class.mobile-open]="isMobileMenuOpen">
+  <div class="nav-logo">
+    <div class="nav-logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="18" cy="5" r="3" stroke="currentColor" stroke-width="2"/>
+        <circle cx="6" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+        <circle cx="18" cy="19" r="3" stroke="currentColor" stroke-width="2"/>
+        <path d="M8.59 13.51l6.83 3.98" stroke="currentColor" stroke-width="2"/>
+        <path d="M15.41 6.51l-6.82 3.98" stroke="currentColor" stroke-width="2"/>
+      </svg>
+    </div>
+    <span class="logo-accent">Linked-Ideas</span>
+  </div>
+
+  <!-- Mobile hamburger -->
+  <button class="hamburger" (click)="toggleMenu()" aria-label="Toggle menu" [attr.aria-expanded]="isMobileMenuOpen">
+    <span class="bar"></span>
+    <span class="bar"></span>
+    <span class="bar"></span>
+  </button>
+
+  <div class="nav-links">
+    <a routerLink="/dashboard" class="nav-link">Dashboard</a>
+    <a routerLink="/creations" class="nav-link">My creations</a>
+  </div>
+
+  <div class="nav-footer">
+    <button (click)="onLogout()" class="nav-link nav-link-logout">Logout</button>
+  </div>
+</nav>
+
+<!-- Mobile overlay and panel -->
+<div class="mobile-overlay" *ngIf="isMobileMenuOpen" (click)="closeMenu()"></div>
+<nav class="mobile-panel" *ngIf="isMobileMenuOpen" (click)="$event.stopPropagation()">
+ 
+  <a routerLink="/dashboard" class="nav-link" (click)="closeMenu()">Dashboard</a>
+  <a routerLink="/creations" class="nav-link" (click)="closeMenu()">My creations</a>
+  <div class="mobile-footer">
+    <button class="nav-link nav-link-logout" (click)="onLogout(); closeMenu()">Logout</button>
+  </div>
+</nav>

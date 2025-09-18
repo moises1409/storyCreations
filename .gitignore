@@ -1,0 +1,27 @@
+# Node/Angular
+node_modules/
+dist/
+.bazel/
+.angular/
+coverage/
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+.env.*
+# OS/Editor
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+# Build/Artifacts
+*.local
+*.cache/
+.cache/
+*.egg-info/
+# Images/Generated
+frontend/src/assets/generated/
+# Env files anywhere
+**/.env

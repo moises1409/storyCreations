@@ -1,0 +1,56 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ideas_recommendation
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ideas_recommendation"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  flaskapp2:
+    build:
+      context: ./backend
+      dockerfile: flask.dockerfile
+    image: flaskapp:1.0.0
+    env_file:
+      - ./backend/.env
+    environment:
+      # Si ya está en .env, puedes quitar esta línea:
+      DATABASE_URL: postgresql+psycopg2://postgres:password@db:5432/ideas_recommendation
+    ports:
+      - "4000:4000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  angularapp2:
+    build:
+      context: ./frontend
+      dockerfile: angular.dockerfile
+    image: angularapp:1.0.0
+    ports:
+      - "3000:80"
+    depends_on:
+      - flaskapp2
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+
+  
+  
+
+    
+

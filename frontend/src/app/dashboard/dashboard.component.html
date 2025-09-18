@@ -1,0 +1,53 @@
+<app-nav></app-nav>
+<app-header></app-header>
+<div class="dashboard-container main-with-sidebar">
+  <!--<h1>Children's Story Co‑Creator</h1>-->
+  <div class="dashboard-content">
+
+    <!-- Main area (cards list or story workspace) -->
+    <main class="main">
+      <app-add-credits-modal *ngIf="showAddCredits" (closeModal)="closeAddCreditsModal()" (choosePlan)="onAddCredits($event)"></app-add-credits-modal>
+      <!-- Seed view: question + CTA -->
+      <ng-container *ngIf="phase==='seed'">
+        <div class="welcome-card start-card" style="padding-bottom:2rem;">
+          <h2 class="section-title" style="margin:0 0 0.5rem 0;">What would you like to create today?</h2>
+          <div class="prompt-area column">
+            <textarea class="form-input big-input" rows="5" [formControl]="seedForm.controls.seed" placeholder="Give me a topic, premise and short instructions in any language"></textarea>
+            <div class="prompt-actions">
+              <button class="dashboard-btn" (click)="startFromSeed()" [disabled]="seedForm.invalid">Generate my story</button>
+            </div>
+          </div>
+          <div class="prompt-chips">
+            <button class="small" (click)="seedForm.patchValue({seed:'A brave dragon in an enchanted forest'})">A brave dragon</button>
+            <button class="small" (click)="seedForm.patchValue({seed:'An enchanted forest full of secrets'})">An enchanted forest</button>
+            <button class="small" (click)="seedForm.patchValue({seed:'A space journey with new friends'})">A space journey</button>
+          </div>
+        </div>
+
+        <!-- Recent creations section (full width) -->
+        <section class="recent-section">
+          <h2 class="section-title" style="margin:0.25rem 0 0.5rem;">Recent creations</h2>
+          <div class="filters-row" style="display:flex; justify-content: space-between; align-items:center; margin:0.25rem 0 0.75rem;">
+            <div class="filters" style="display:flex; gap:0.5rem;">
+              <button class="small" [class.selected]="filter==='all'" (click)="setFilter('all')">All</button>
+              <button class="small" [class.selected]="filter==='in_progress'" (click)="setFilter('in_progress')">In progress</button>
+              <button class="small" [class.selected]="filter==='finished'" (click)="setFilter('finished')">Finished</button>
+            </div>
+            <a routerLink="/creations" class="right-link">My creations ▸</a>
+          </div>
+          <div *ngIf="storiesLoading" style="display:flex; justify-content:center; padding: 1rem 0;">
+            <div class="spinner"></div>
+          </div>
+          <app-story-cards *ngIf="!storiesLoading" [stories]="filteredStories" [limit]="4" (storyDeleted)="loadStories()"></app-story-cards>
+        </section>
+      </ng-container>
+      
+
+      
+
+      
+      
+
+    </main>
+  </div>
+</div>

@@ -1,0 +1,83 @@
+<div class="modal-overlay" (click)="closeModal()">
+  <div class="modal-container" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h2 class="modal-title">Join Linked Ideas</h2>
+      <button class="close-btn" (click)="closeModal()" type="button">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <p class="modal-subtitle">Create your account and start discovering amazing business ideas</p>
+      
+      <form [formGroup]="form" (ngSubmit)="onSubmit()" class="auth-form">
+        <div class="form-group">
+          <label for="name" class="form-label">Full Name <span class="optional">(optional)</span></label>
+          <input 
+            id="name"
+            formControlName="name" 
+            type="text" 
+            class="form-input"
+            placeholder="Enter your full name"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="email" class="form-label">Email Address</label>
+          <input 
+            id="email"
+            formControlName="email" 
+            type="email" 
+            class="form-input"
+            placeholder="Enter your email"
+            [class.error]="form.controls.email.invalid && form.controls.email.touched"
+          />
+          <div class="error-message" *ngIf="form.controls.email.invalid && form.controls.email.touched">
+            Please enter a valid email address
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="password" class="form-label">Password</label>
+          <input 
+            id="password"
+            formControlName="password" 
+            type="password" 
+            class="form-input"
+            placeholder="Create a secure password"
+            [class.error]="form.controls.password.invalid && form.controls.password.touched"
+          />
+          <div class="error-message" *ngIf="form.controls.password.invalid && form.controls.password.touched">
+            Password must be at least 8 characters long
+          </div>
+        </div>
+
+        <div class="error-message" *ngIf="error">{{error}}</div>
+
+        <button 
+          type="submit" 
+          class="submit-btn"
+          [disabled]="form.invalid || loading"
+          [class.loading]="loading"
+        >
+          <span *ngIf="!loading">Create Account</span>
+          <span *ngIf="loading" class="loading-spinner">
+            <svg class="spinner" viewBox="0 0 50 50">
+              <circle class="path" cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-width="5"></circle>
+            </svg>
+            Creating Account...
+          </span>
+        </button>
+      </form>
+
+      <div class="modal-footer">
+        <p class="switch-text">
+          Already have an account? 
+          <button type="button" class="switch-btn" (click)="switchToLogin()">Sign in here</button>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>

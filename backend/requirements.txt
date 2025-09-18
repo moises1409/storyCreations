@@ -1,0 +1,12 @@
+flask
+flask_cors
+SQLAlchemy==2.0.31
+psycopg2-binary==2.9.9
+python-dotenv==1.0.1
+alembic
+passlib[bcrypt]
+bcrypt==4.0.1
+PyJWT
+google-genai
+openai
+pydantic

@@ -1,0 +1,123 @@
+<app-nav></app-nav>
+<app-header></app-header>
+<div class="dashboard-container main-with-sidebar">
+  <!--<h1>Children's Story Co‑Creator</h1>-->
+  <div class="dashboard-content">
+
+    <!-- Main area (cards list or story workspace) -->
+    <main class="main">
+      <app-add-credits-modal *ngIf="showAddCredits" (closeModal)="closeAddCreditsModal()" (choosePlan)="onAddCredits($event)"></app-add-credits-modal>
+      <!-- Seed view: question + CTA -->
+      <ng-container *ngIf="phase==='seed'">
+        <div class="welcome-card start-card" style="padding-bottom:2rem;">
+          <h2 class="section-title" style="margin:0 0 0.5rem 0;">What would you like to create today?</h2>
+          <div class="prompt-area column">
+            <textarea class="form-input big-input" rows="5" [formControl]="seedForm.controls.seed" placeholder="Give me a topic, premise and short instructions in any language"></textarea>
+            <div class="prompt-actions">
+              <button class="dashboard-btn" (click)="startFromSeed()" [disabled]="seedForm.invalid">Generate my story</button>
+            </div>
+          </div>
+          <div class="prompt-chips">
+            <button class="small" (click)="seedForm.patchValue({seed:'A brave dragon in an enchanted forest'})">A brave dragon</button>
+            <button class="small" (click)="seedForm.patchValue({seed:'An enchanted forest full of secrets'})">An enchanted forest</button>
+            <button class="small" (click)="seedForm.patchValue({seed:'A space journey with new friends'})">A space journey</button>
+          </div>
+        </div>
+
+        <!-- Recent creations section (full width) -->
+        <section class="recent-section">
+          <h2 class="section-title" style="margin:0.25rem 0 0.5rem;">Recent creations</h2>
+          <div class="filters-row" style="display:flex; justify-content: space-between; align-items:center; margin:0.25rem 0 0.75rem;">
+            <div class="filters" style="display:flex; gap:0.5rem;">
+              <button class="small" [class.selected]="filter==='all'" (click)="setFilter('all')">All</button>
+              <button class="small" [class.selected]="filter==='in_progress'" (click)="setFilter('in_progress')">In progress</button>
+              <button class="small" [class.selected]="filter==='finished'" (click)="setFilter('finished')">Finished</button>
+            </div>
+            <a routerLink="/creations" class="right-link">My creations ▸</a>
+          </div>
+          <app-story-cards [stories]="filteredStories" [limit]="4" (storyDeleted)="loadStories()"></app-story-cards>
+        </section>
+      </ng-container>
+      
+
+      
+
+      <!-- Chapter phase (book-like, stacked cards with scroll) -->
+      <div *ngIf="phase==='chapter' && chapters.length">
+        <div *ngFor="let c of chapters; index as i" style="margin-bottom: 1rem;">
+          <div class="welcome-card chapter-card">
+            <div style="grid-column: 1 / -1; display:flex; justify-content: space-between; align-items:center; margin-bottom:0.5rem;">
+              <!--<div class="meta"><div class="title">Chapter {{ i + 1 }}</div></div>-->
+              <button class="small" (click)="toggleChapter(i)">{{ c.collapsed ? 'Expand' : 'Collapse' }}</button>
+            </div>
+            <div class="chapter-left">
+              <h2 class="chapter-title">{{ c.title }}</h2>
+              <div *ngIf="!c.collapsed" style="min-height: 3.5rem; position: relative;">
+                <ng-container *ngIf="loadingTextIndex === i; then textLoading; else textBlock"></ng-container>
+                <ng-template #textLoading>
+                  <div class="spinner" style="position:absolute; left:0; top:0;"></div>
+                </ng-template>
+                <ng-template #textBlock>
+                  <p class="scene-text">{{ c.text }}</p>
+                </ng-template>
+              </div>
+              <div *ngIf="!c.collapsed" style="display:flex; gap:0.5rem; margin-top:0.75rem; flex-wrap:wrap;">
+                <button class="small" (click)="playAudio(c)">Listen narration</button>
+              </div>
+            </div>
+            <div class="chapter-right">
+              <div *ngIf="!c.collapsed" class="thumb image-slot" style="height:400px; width:100%; overflow:hidden; display:flex; align-items:center; justify-content:center; position:relative;">
+                <ng-container *ngIf="loadingImageIndex === i; then imgLoading; else imgBlock"></ng-container>
+                <ng-template #imgLoading>
+                  <div class="spinner"></div>
+                </ng-template>
+                <ng-template #imgBlock>
+                  <img [src]="c.imageUrl || '/assets/test.jpeg'" alt="chapter image" style="width:100%; height:100%; object-fit:cover; border-radius:8px;"/>
+                </ng-template>
+              </div>
+            </div>
+          </div>
+
+          <!-- Continuation block only for the latest chapter -->
+          <div *ngIf="i === chapters.length - 1 && finalReadyForIndex === null && loadingTextIndex !== i && loadingImageIndex !== i" class="chapter-continue">
+            <div class="error" *ngIf="error" style="margin-bottom:0.5rem;">{{ error }}</div>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:1rem; margin-bottom:0.75rem;">
+              <button class="small" *ngFor="let opt of (c?.choices || [])" (click)="onChoice(opt)">{{ opt }}</button>
+            </div>
+            <div class="prompt-area column">
+              <textarea class="form-input" rows="3" [formControl]="userContinuation" placeholder="Write your own continuation..." (input)="onUserTextInput()"></textarea>
+              <div class="prompt-actions">
+                <button class="small" (click)="finalizeStory()" [disabled]="loading || !hasText()">Finish story</button>
+                <button *ngIf="chapters.length < maxChapters - 1" class="dashboard-btn" (click)="generateNextChapter()" [disabled]="loading || !hasText()">Generate next chapter</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Final export block appears once final chapter is generated (after text+image loaded or when user finishes) -->
+          <div *ngIf="finalReadyForIndex === i && !loadingTextIndex && !loadingImageIndex" class="welcome-card" style="margin-top:0.75rem;">
+            <h2 class="section-title">Story complete!</h2>
+            <p class="meta">{{ historyTitle }} · {{ chapters.length }} chapters</p>
+            <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:1rem;">
+              <button class="small" (click)="exportPdf()">📖 Generate PDF</button>
+              <button class="small" (click)="exportVideo()">🎬 Generate video</button>
+              <button class="small" (click)="saveStory()">💾 Save to My Stories</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Final phase -->
+      <div *ngIf="phase==='final'" class="welcome-card">
+        <h2 class="section-title">Story complete!</h2>
+        <p class="meta">{{ historyTitle }} · {{ chapters.length }} chapters</p>
+        <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:1rem;">
+          <button class="small" (click)="exportPdf()">📖 Generate PDF</button>
+          <button class="small" (click)="exportVideo()">🎬 Generate video</button>
+          <button class="small" (click)="saveStory()">💾 Save to My Stories</button>
+        </div>
+      </div>
+      
+
+    </main>
+  </div>
+</div>
