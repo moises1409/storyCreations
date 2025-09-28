@@ -20,7 +20,8 @@
   </button>
 
   <div class="nav-links">
-    <a routerLink="/dashboard" class="nav-link">Dashboard</a>
+    <a routerLink="/dashboard" class="nav-link">Create story</a>
+    <a routerLink="/characters/new" class="nav-link">My characters</a>
     <a routerLink="/creations" class="nav-link">My creations</a>
   </div>
 
@@ -33,7 +34,8 @@
 <div class="mobile-overlay" *ngIf="isMobileMenuOpen" (click)="closeMenu()"></div>
 <nav class="mobile-panel" *ngIf="isMobileMenuOpen" (click)="$event.stopPropagation()">
  
-  <a routerLink="/dashboard" class="nav-link" (click)="closeMenu()">Dashboard</a>
+  <a routerLink="/dashboard" class="nav-link" (click)="closeMenu()">Create story</a>
+  <a routerLink="/characters/new" class="nav-link" (click)="closeMenu()">My characters</a>
   <a routerLink="/creations" class="nav-link" (click)="closeMenu()">My creations</a>
   <div class="mobile-footer">
     <button class="nav-link nav-link-logout" (click)="onLogout(); closeMenu()">Logout</button>

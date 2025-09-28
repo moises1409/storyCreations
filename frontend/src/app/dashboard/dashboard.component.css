@@ -33,7 +33,7 @@
 .welcome-card:hover { border-color: var(--primary-green); box-shadow: 0 20px 40px rgba(0,255,136,0.1); }
 .welcome-card h2 { color: var(--white); font-size: 1.3rem; font-weight: 600; margin-bottom: 1rem; }
 .generator-form { display:flex; flex-direction:column; gap: 0.75rem; }
-.scene-card .scene-text { color: var(--white); font-size: 1.05rem; line-height: 1.6; }
+.scene-card .scene-text { color: var(--white); font-size: 1.5rem; line-height: 1.6; }
 .chapter-card { display:grid; grid-template-columns: 1.2fr 1fr; gap: 1rem; align-items: start; }
 .chapter-title { color: var(--white); font-size: 1.4rem; font-weight: 700; margin: 0 0 0.5rem 0; }
 .chapter-nav { display:flex; justify-content: space-between; margin-top: 0.75rem; }

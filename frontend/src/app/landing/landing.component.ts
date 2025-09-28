@@ -45,19 +45,8 @@ export class LandingComponent implements OnInit, OnDestroy {
   }
 
   onPrimaryCta() {
-    // If authenticated, go to dashboard; else open sign-in modal
-    const isAuthed = (window as any).ng?.getInjector?.(document.querySelector('app-root'))?.get
-      ? false
-      : false;
-    // Simpler: rely on route guard; open modal for unauthenticated by default
-    // We don't have direct AuthService injection here to keep imports minimal
-    // so navigate and let guard/modal control behavior via existing flows
-    try {
-      // Attempt navigate; guard will enforce auth
-      this.router.navigate(['/dashboard']);
-    } catch {
-      this.modalService.openSignIn();
-    }
+    // Open signup modal for CTAs
+    this.modalService.openSignup();
   }
 
   scrollToHowItWorks() {

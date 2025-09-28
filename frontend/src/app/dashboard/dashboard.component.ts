@@ -9,11 +9,12 @@ import { HeaderComponent } from '../shared/header.component';
 import { AddCreditsModalComponent } from '../shared/add-credits-modal.component';
 import { StoryCardsComponent } from '../shared/story-cards.component';
 import { Router } from '@angular/router';
+import { GenerateStoryWidgetComponent } from '../shared/generate-story-widget.component';
 
 @Component({
   standalone: true,
   selector: 'app-dashboard',
-  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, RouterModule, NavComponent, HeaderComponent, AddCreditsModalComponent, StoryCardsComponent],
+  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, RouterModule, NavComponent, HeaderComponent, AddCreditsModalComponent, StoryCardsComponent, GenerateStoryWidgetComponent],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.css']
 })
@@ -23,6 +24,7 @@ export class DashboardComponent implements OnInit {
   private fb = inject(FormBuilder);
   router = inject(Router);
   user = this.auth.user$.value;
+  initialImagesFromNav: string[] = [];
 
   // Co-creator state (English)
   phase: 'seed' | 'chapter' | 'final' = 'seed';
@@ -57,6 +59,11 @@ export class DashboardComponent implements OnInit {
       this.auth.fetchMe().subscribe({ next: u => this.user = u });
     }
     this.loadStories();
+    // Read images passed from character builder
+    try {
+      const state: any = (history && history.state) || {};
+      if (Array.isArray(state.images)) this.initialImagesFromNav = state.images.filter(Boolean);
+    } catch {}
     // Listen for header add-credits request
     window.addEventListener('open-add-credits', this.openAddCreditsFromHeader);
   }
@@ -70,6 +77,14 @@ export class DashboardComponent implements OnInit {
     if (!seed) return;
     // Navigate first to the story page, passing the seed so it can start generation there
     this.router.navigate(['/story/new'], { queryParams: { seed } });
+  }
+
+  // Handle new widget output
+  onGenerate(payload: { seed: string; character_ids: number[] }) {
+    const value = (payload?.seed ?? '').trim();
+    if (!value) return;
+    // Pass seed and optional character IDs via navigation state
+    this.router.navigate(['/story/new'], { queryParams: { seed: value }, state: { character_ids: payload.character_ids || [] } });
   }
 
   setFilter(f: 'all'|'in_progress'|'finished') { this.filter = f; }

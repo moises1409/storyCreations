@@ -53,6 +53,10 @@ class Story(Base):
 
     # New: cached cover image for fast listing (last chapter image)
     cover_image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    
+    # New: persisted character IDs as JSON array of integers
+    character_ids_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship(backref="stories")
     chapters: Mapped[list["Chapter"]] = relationship(backref="story", cascade="all, delete-orphan")
@@ -88,4 +92,14 @@ class CreditAddition(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     added: Mapped[int] = mapped_column(Integer, nullable=False)
     total_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class CharacterImage(Base):
+    __tablename__ = "character_images"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    image_data: Mapped[str] = mapped_column(Text, nullable=False)  # data URL or absolute URL
+    name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

@@ -6,12 +6,13 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { NavComponent } from '../shared/nav.component';
 import { HeaderComponent } from '../shared/header.component';
 import { AddCreditsModalComponent } from '../shared/add-credits-modal.component';
+import { EbookViewerComponent } from '../shared/ebook-viewer.component';
 import { AuthService } from '../auth/auth.service';
 
 @Component({
   standalone: true,
   selector: 'app-story',
-  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, NavComponent, HeaderComponent, AddCreditsModalComponent],
+  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, NavComponent, HeaderComponent, AddCreditsModalComponent, EbookViewerComponent],
   templateUrl: './story.component.html',
   styleUrls: ['./story.component.css', '../dashboard/dashboard.component.css']
 })
@@ -38,6 +39,11 @@ export class StoryComponent implements OnInit {
   error = '';
   useApiImages = true;
   showAddCredits = false;
+  // Optional selected character IDs passed from dashboard
+  initialCharacterIds: number[] = [];
+  
+  // eBook properties
+  showEbook = false;
 
   seedForm = this.fb.group({ seed: ['', Validators.required] });
   userContinuation = this.fb.control<string>('');
@@ -54,6 +60,9 @@ export class StoryComponent implements OnInit {
       this.phase = 'seed';
       // If a seed is provided via query param, auto-start generation
       const seedFromQuery = (this.route.snapshot.queryParamMap.get('seed') || '').trim();
+      // Capture optional character IDs from navigation state once
+      const state: any = (history && history.state) || {};
+      this.initialCharacterIds = Array.isArray(state.character_ids) ? (state.character_ids as any[]).map(x => Number(x)).filter(n => Number.isFinite(n)) : [];
       if (seedFromQuery) {
         this.seedForm.setValue({ seed: seedFromQuery });
         // Defer to allow initial render
@@ -103,7 +112,7 @@ export class StoryComponent implements OnInit {
     this.loadingTextIndex = 0; this.loadingImageIndex = 0;
     this.selectedChoice = null; this.userContinuation.setValue('');
 
-    this.fetchSeed(seed).subscribe({
+    this.fetchSeed(seed, this.initialCharacterIds).subscribe({
       next: (res) => {
         const ch = [...this.chapters];
         if (ch[0]) { ch[0] = { ...ch[0], text: res?.text || ch[0].text, choices: (res as any)?.choices || [] }; this.chapters = ch; }
@@ -133,7 +142,7 @@ export class StoryComponent implements OnInit {
     if (!this.hasText()) return;
     const t = (this.userContinuation.value ?? '').trim();
     if (this.chapters.length >= this.maxChapters - 1) { this.finalizeStory(); return; }
-    this.loading = true; const chapterNum = this.chapters.length + 1;
+    const chapterNum = this.chapters.length + 1;
     if (this.chapters.length > 0) { const prev = [...this.chapters]; prev[prev.length - 1] = { ...prev[prev.length - 1], collapsed: true }; this.chapters = prev; }
     // Create chapter card immediately
     const nextCard = this.buildChapter(chapterNum, t); nextCard.text = ''; nextCard.collapsed = false;
@@ -167,9 +176,9 @@ export class StoryComponent implements OnInit {
           }
           this.showAddCredits = true;
         }
-        this.loading = false;
+        // no global loading state for next chapter
       },
-      complete: () => { this.loading = false; }
+      complete: () => { /* no-op */ }
     });
   }
 
@@ -181,7 +190,7 @@ export class StoryComponent implements OnInit {
   finalizeStory(topic?: string) {
     this.error = '';
     if (!this.hasText()) return;
-    this.loading = true; const t = (this.userContinuation.value ?? '').trim();
+    const t = (this.userContinuation.value ?? '').trim();
     const idea = t || 'Final chapter'; const chapterNum = this.chapters.length + 1;
     if (this.chapters.length > 0) { this.chapters = this.chapters.map(ch => ({ ...ch, collapsed: true })); }
     // Create final card immediately
@@ -214,9 +223,8 @@ export class StoryComponent implements OnInit {
           }
           this.showAddCredits = true;
         }
-        this.loading = false;
       },
-      complete: () => { this.loading = false; }
+      complete: () => { /* no global loading for final generation */ }
     });
   }
 
@@ -260,80 +268,16 @@ export class StoryComponent implements OnInit {
     });
   }
 
-  // Audio narration state and controls
-  private currentSpeechUtterance?: SpeechSynthesisUtterance;
-  private currentAudioEl?: HTMLAudioElement;
-  activeNarrationChapterIndex: number | null = null;
-  narrationState: 'idle' | 'playing' | 'paused' = 'idle';
 
-  // Start or switch narration for a chapter
-  playAudio(scene: { text: string; audioUrl?: string }, chapterIndex?: number) {
-    try {
-      // If clicking on the same chapter while paused, resume
-      if (this.narrationState === 'paused' && this.activeNarrationChapterIndex === (chapterIndex ?? null)) {
-        this.resumeNarration();
-        return;
-      }
-
-      // Stop any existing playback before starting a new one
-      this.stopNarration();
-
-      this.activeNarrationChapterIndex = chapterIndex ?? null;
-
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(scene.text || '');
-        utterance.rate = 1;
-        utterance.pitch = 1;
-        utterance.lang = 'en-US';
-        utterance.onend = () => { this.narrationState = 'idle'; this.activeNarrationChapterIndex = null; this.currentSpeechUtterance = undefined; };
-        utterance.onerror = () => { this.narrationState = 'idle'; };
-        this.currentSpeechUtterance = utterance;
-        window.speechSynthesis.speak(utterance);
-        this.narrationState = 'playing';
-        return;
-      }
-
-      if (scene.audioUrl) {
-        const audio = new Audio(scene.audioUrl);
-        audio.onended = () => { this.narrationState = 'idle'; this.activeNarrationChapterIndex = null; this.currentAudioEl = undefined; };
-        this.currentAudioEl = audio;
-        audio.play();
-        this.narrationState = 'playing';
-      }
-    } catch {}
+  // Exports
+  openEbook() {
+    this.showEbook = true;
   }
-
-  pauseNarration() {
-    try {
-      if (this.narrationState !== 'playing') return;
-      if (this.currentSpeechUtterance && 'speechSynthesis' in window) { window.speechSynthesis.pause(); this.narrationState = 'paused'; return; }
-      if (this.currentAudioEl) { this.currentAudioEl.pause(); this.narrationState = 'paused'; }
-    } catch {}
+  
+  closeEbook() {
+    this.showEbook = false;
   }
-
-  resumeNarration() {
-    try {
-      if (this.narrationState !== 'paused') return;
-      if (this.currentSpeechUtterance && 'speechSynthesis' in window) { window.speechSynthesis.resume(); this.narrationState = 'playing'; return; }
-      if (this.currentAudioEl) { this.currentAudioEl.play(); this.narrationState = 'playing'; }
-    } catch {}
-  }
-
-  stopNarration() {
-    try {
-      if (this.currentSpeechUtterance && 'speechSynthesis' in window) { window.speechSynthesis.cancel(); }
-      if (this.currentAudioEl) { this.currentAudioEl.pause(); this.currentAudioEl.currentTime = 0; }
-    } catch {}
-    this.currentSpeechUtterance = undefined;
-    this.currentAudioEl = undefined;
-    this.narrationState = 'idle';
-    this.activeNarrationChapterIndex = null;
-  }
-
-  // Exports (placeholders)
-  exportPdf() { alert('📖 Generate PDF (demo)'); }
-  exportVideo() { alert('🎬 Generate animated video (demo)'); }
-  saveStory() { alert('💾 Story saved (demo)'); }
+  
 
   private buildChapter(num: number, idea: string) {
     const img = '/assets/test.jpeg';
@@ -348,10 +292,10 @@ export class StoryComponent implements OnInit {
       .subscribe({ next: (res) => { if (res?.imageUrl) { const chs = [...this.chapters]; if (chs[index]) { chs[index] = { ...chs[index], imageUrl: res.imageUrl }; this.chapters = chs; } } }, complete: () => { this.loadingImageIndex = null; } });
   }
 
-  private fetchSeed(prompt: string) {
+  private fetchSeed(prompt: string, character_ids: number[] = []) {
     const url = `${this.auth.baseUrl}/ai/generate-seed`;
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
-    return this.http.post<{ text?: string; image_prompt?: string; story_id?: number; chapter_id?: number }>(url, { prompt }, { headers });
+    return this.http.post<{ text?: string; image_prompt?: string; story_id?: number; chapter_id?: number }>(url, { prompt, character_ids }, { headers });
   }
 
   private fetchChapter(prompt: string, mode: 'continue' | 'final' = 'continue') {

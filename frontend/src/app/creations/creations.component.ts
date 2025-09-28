@@ -23,7 +23,7 @@ import { AuthService } from '../auth/auth.service';
       <div *ngIf="storiesLoading" style="display:flex; justify-content:center; padding: 1rem 0;">
         <div class="spinner"></div>
       </div>
-      <app-story-cards *ngIf="!storiesLoading" [stories]="filteredStories" (storyDeleted)="refresh()"></app-story-cards>
+      <app-story-cards *ngIf="!storiesLoading" [stories]="filteredStories" (storyDeleted)="refresh(true)"></app-story-cards>
     </div>
   `,
   styles: [
@@ -79,8 +79,8 @@ export class CreationsComponent implements OnInit {
 
   setFilter(f: 'all'|'in_progress'|'finished') { this.filter = f; }
 
-  refresh() {
-    this.storiesLoading = true;
+  refresh(skipSpinner: boolean = false) {
+    if (!skipSpinner) this.storiesLoading = true;
     const url = `${this.auth.baseUrl}/stories`;
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
     this.http.get<StorySummary[]>(url, { headers }).subscribe({ next: (res) => this.stories = res || [], error: () => {}, complete: () => { this.storiesLoading = false; } });

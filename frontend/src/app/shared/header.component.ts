@@ -18,7 +18,7 @@ import { ModalService } from '../auth/modal.service';
             <button class="profile-btn" aria-label="Profile menu" aria-haspopup="menu" [attr.aria-expanded]="isProfileOpen" aria-controls="profile-menu" (click)="toggleProfile()">
               <span class="avatar">{{ initial }}</span>
             </button>
-            <div class="dropdown" id="profile-menu" role="menu" *ngIf="isProfileOpen" [@fadeSlide]>
+            <div class="dropdown" id="profile-menu" role="menu" *ngIf="isProfileOpen">
               <div class="caret"></div>
               <div class="menu-inner">
                 <div class="user-row" tabindex="-1" #firstEl>
@@ -99,8 +99,6 @@ import { ModalService } from '../auth/modal.service';
     .login-btn { border: 1px solid var(--light-gray); background: var(--medium-gray); color: var(--white); border-radius: 10px; padding: 0.4rem 0.7rem; cursor:pointer; }
     .login-btn:hover { border-color: var(--primary-green); }
     `
-  ],
-  animations: [
   ]
 })
 export class HeaderComponent implements OnDestroy {
@@ -125,7 +123,16 @@ export class HeaderComponent implements OnDestroy {
   toggleProfile() {
     this.isProfileOpen = !this.isProfileOpen;
     if (this.isProfileOpen) {
-      setTimeout(() => this.firstEl?.nativeElement?.focus(), 0);
+      // Fetch fresh user data to get updated credits
+      this.auth.fetchMe().subscribe({
+        next: () => {
+          setTimeout(() => this.firstEl?.nativeElement?.focus(), 0);
+        },
+        error: () => {
+          // If fetch fails, still focus the element
+          setTimeout(() => this.firstEl?.nativeElement?.focus(), 0);
+        }
+      });
     }
   }
   closeProfile() { this.isProfileOpen = false; }

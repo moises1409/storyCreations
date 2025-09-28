@@ -24,98 +24,111 @@
 
   <!-- Hero Section -->
   <section class="hero" id="hero">
-    <div class="hero-content">
-      <h1 class="hero-title">Create Emotional Video Stories From a Single Prompt</h1>
-      <p class="hero-subtitle">
-        Type x your idea and instantly get an engaging video tailored for YouTube, social media, or bedtime stories for kids.
+    <div class="hero-content centered">
+      <h1 class="hero-title big">TURN BEDTIME INTO A MAGICAL ADVENTURE</h1>
+      <p class="hero-subtitle wide">
+        Co-create enchanting stories with your child — one chapter, one image, one imagination at a time.
       </p>
-      <div style="display:flex; gap:1rem; flex-wrap:wrap;">
-        <button class="cta-button" (click)="onPrimaryCta()">
-          <span class="button-text">Create a Story Video</span>
-          <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <div class="hero-cta-row">
+        <button class="primary-cta" (click)="onPrimaryCta()">
+          CREATE YOUR FIRST STORY
+          <svg class="spark-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M12 2l1.8 4.6L18 8.4l-4.2 1.8L12 15l-1.8-4.8L6 8.4l4.2-1.8L12 2z" stroke="currentColor" stroke-width="1.5" fill="none"/>
           </svg>
         </button>
-        <button class="cta-button-secondary" (click)="scrollToHowItWorks()">See How It Works</button>
       </div>
+      <!--button class="watch-link" (click)="scrollToHowItWorks()" aria-label="Watch a short video">
+        <span class="play-circle">▶</span>
+        <span>Watch a short video</span>
+      </button>-->
     </div>
-    <div class="hero-visual">
-      <div class="idea-cards">
-        <div class="idea-card card-1">
-          <div class="card-icon">🎬</div>
-          <div class="card-content">
-            <h3>Prompt → Video</h3>
-            <p>Script, scenes, and voiceover from one idea.</p>
-          </div>
-        </div>
-        <div class="idea-card card-2">
-          <div class="card-icon">💚</div>
-          <div class="card-content">
-            <h3>Emotion Styles</h3>
-            <p>Heartwarming, adventurous, dramatic.</p>
-          </div>
-        </div>
-        <div class="idea-card card-3">
-          <div class="card-icon">🎵</div>
-          <div class="card-content">
-            <h3>Voices & Music</h3>
-            <p>Natural voiceovers and soundtrack.</p>
-          </div>
-        </div>
+  </section>
+
+  <!-- Example Covers Section -->
+  <section class="example-covers">
+    <h2 class="section-title">Story ideas to spark imagination</h2>
+    <div class="cover-grid">
+      <div class="cover-card">
+        <div class="thumb"><img src="/assets/cover1.png" alt="Story cover: The Moonlight Detective" /></div>
+        <div class="cover-title">The Moonlight Detective</div>
+      </div>
+      <div class="cover-card">
+        <div class="thumb"><img src="/assets/cover2.png" alt="Story cover: Jungle of Giggles" /></div>
+        <div class="cover-title">Jungle of Giggles</div>
+      </div>
+      <div class="cover-card">
+        <div class="thumb"><img src="/assets/cover3.png" alt="Story cover: The Rainbow Bakery" /></div>
+        <div class="cover-title">The Rainbow Bakery</div>
+      </div>
+      <div class="cover-card">
+        <div class="thumb"><img src="/assets/cover4.png" alt="Story cover: Captain Star and the Lost Planet" /></div>
+        <div class="cover-title">Captain Star and the Lost Planet</div>
       </div>
     </div>
   </section>
 
   <!-- Features Section -->
   <section class="features">
-    <h2 class="section-title">Why Choose Linked-Ideas?</h2>
+    <h2 class="section-title">Why parents love it</h2>
     <div class="features-grid">
       <div class="feature-card">
         <div class="feature-icon">🎬</div>
-        <h3>Prompt → Video</h3>
-        <p>Turn any idea into a full video with script, scenes, and voiceover.</p>
+        <h3>Spark imagination</h3>
+        <p>Inspire your child to invent and explore new worlds.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon">💚</div>
-        <h3>Emotion Styles</h3>
-        <p>Heartwarming, adventurous, dramatic — choose the mood.</p>
+        <h3>Quality bonding</h3>
+        <p>Share magical moments while creating together.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon">🎵</div>
-        <h3>Voices & Music</h3>
-        <p>Natural voiceovers and soundtrack to match the story.</p>
+        <h3>Unique keepsakes</h3>
+        <p>Turn your digital stories into a beautifully printed book — the perfect gift.</p>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon">📤</div>
-        <h3>Export & Share</h3>
-        <p>Download MP4, share to YouTube or social in one click.</p>
-      </div>
+      
     </div>
   </section>
 
   <!-- How It Works Section -->
   <section class="how-it-works" id="how-it-works">
     <h2 class="section-title">How It Works</h2>
-    <div class="steps-container">
-      <div class="step">
-        <div class="step-number">1</div>
-        <h3>Describe your idea</h3>
-        <p>Write a short prompt about your story or topic.</p>
+    <div class="hiw-list">
+      <div class="hiw-row">
+        <div class="hiw-image">
+          <img src="/assets/howitworks1.jpg" alt="Create characters for your story" />
+        </div>
+        <div class="hiw-text">
+          <h3>Create your characters</h3>
+          <p>Design unique characters for your story by uploading photos, taking pictures, or describing them. Bring your heroes to life!</p>
+        </div>
       </div>
-      <div class="step">
-        <div class="step-number">2</div>
-        <h3>Pick a style</h3>
-        <p>Choose mood, audience, and platform format.</p>
+      <div class="hiw-row reverse">
+        <div class="hiw-image">
+          <img src="/assets/howitworks2.jpg" alt="Describe your story idea" />
+        </div>
+        <div class="hiw-text">
+          <h3>Describe your story idea</h3>
+          <p>Choose a theme your child loves and write a simple prompt. We'll create the first chapter with your characters.</p>
+        </div>
       </div>
-      <div class="step">
-        <div class="step-number">3</div>
-        <h3>Generate & preview</h3>
-        <p>We assemble scenes, voice, and music automatically.</p>
+      <div class="hiw-row">
+        <div class="hiw-image">
+          <img src="/assets/howitworks3.jpg" alt="Continue the adventure" />
+        </div>
+        <div class="hiw-text">
+          <h3>Continue the adventure</h3>
+          <p>Decide what happens next and build the tale together, chapter by chapter.</p>
+        </div>
       </div>
-      <div class="step">
-        <div class="step-number">4</div>
-        <h3>Edit & export</h3>
-        <p>Tweak details and export in the right format.</p>
+      <div class="hiw-row reverse">
+        <div class="hiw-image">
+          <img src="/assets/howitworks4.jpg" alt="Finish and treasure" />
+        </div>
+        <div class="hiw-text">
+          <h3>Finish & treasure</h3>
+          <p>Save it to your library or turn it into a printed book you’ll treasure.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -124,7 +137,7 @@
   <section class="cta-section">
     <div class="cta-content">
       <h2>Bring Your Stories to Life Today</h2>
-      <p>Create videos for YouTube, social media, or bedtime stories — all from one prompt.</p>
+      <p>Create your first story in minutes and start an adventure that belongs only to you and your child.</p>
       <button class="cta-button-secondary" (click)="onPrimaryCta()">Start Creating for Free</button>
     </div>
   </section>
@@ -145,11 +158,11 @@
         <span class="logo-text">Linked</span>
         <span class="logo-accent">Ideas</span>
       </div>
-      <p class="footer-tagline">Connecting visionaries with opportunity</p>
+      <p class="footer-tagline">Stories that grow with imagination</p>
       <div class="footer-links">
-        <a href="#" class="footer-link">Privacy Policy</a>
-        <a href="#" class="footer-link">Terms of Service</a>
-        <a href="#" class="footer-link">Contact Us</a>
+        <a routerLink="/privacy" class="footer-link">Privacy Policy</a>
+        <a routerLink="/terms" class="footer-link">Terms of Service</a>
+        <a href="mailto:info@linked-ideas.com" class="footer-link">Contact Us</a>
       </div>
     </div>
   </footer>

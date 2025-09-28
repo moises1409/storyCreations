@@ -9,20 +9,7 @@
       <app-add-credits-modal *ngIf="showAddCredits" (closeModal)="closeAddCreditsModal()" (choosePlan)="onAddCredits($event)"></app-add-credits-modal>
       <!-- Seed view: question + CTA -->
       <ng-container *ngIf="phase==='seed'">
-        <div class="welcome-card start-card" style="padding-bottom:2rem;">
-          <h2 class="section-title" style="margin:0 0 0.5rem 0;">What would you like to create today?</h2>
-          <div class="prompt-area column">
-            <textarea class="form-input big-input" rows="5" [formControl]="seedForm.controls.seed" placeholder="Give me a topic, premise and short instructions in any language"></textarea>
-            <div class="prompt-actions">
-              <button class="dashboard-btn" (click)="startFromSeed()" [disabled]="seedForm.invalid">Generate my story</button>
-            </div>
-          </div>
-          <div class="prompt-chips">
-            <button class="small" (click)="seedForm.patchValue({seed:'A brave dragon in an enchanted forest'})">A brave dragon</button>
-            <button class="small" (click)="seedForm.patchValue({seed:'An enchanted forest full of secrets'})">An enchanted forest</button>
-            <button class="small" (click)="seedForm.patchValue({seed:'A space journey with new friends'})">A space journey</button>
-          </div>
-        </div>
+        <app-generate-story-widget (generate)="onGenerate($event)" [initialImages]="initialImagesFromNav"></app-generate-story-widget>
 
         <!-- Recent creations section (full width) -->
         <section class="recent-section">

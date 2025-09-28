@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
 import { AuthService } from '../auth/auth.service';
+import { ConfirmationModalComponent } from './confirmation-modal.component';
 
 export interface StorySummary {
   id: number;
@@ -15,7 +16,7 @@ export interface StorySummary {
 @Component({
   selector: 'app-story-cards',
   standalone: true,
-  imports: [CommonModule, HttpClientModule],
+  imports: [CommonModule, HttpClientModule, ConfirmationModalComponent],
   template: `
     <div class="cards" [style.gridTemplateColumns]="gridTemplate">
       <div class="story-card" *ngFor="let s of limitedStories" (click)="open(s)">
@@ -40,6 +41,17 @@ export interface StorySummary {
       </div>
       <div class="empty" *ngIf="!limitedStories?.length">No stories yet</div>
     </div>
+    
+    <!-- Confirmation Modal -->
+    <app-confirmation-modal 
+      *ngIf="showDeleteModal" 
+      title="Delete Story" 
+      message="Are you sure you want to delete this story and all of its chapters? This action cannot be undone."
+      confirmText="Delete"
+      (confirm)="confirmDelete()" 
+      (cancel)="cancelDelete()" 
+      (close)="cancelDelete()">
+    </app-confirmation-modal>
   `,
   styles: [
     `
@@ -71,6 +83,8 @@ export class StoryCardsComponent implements OnChanges {
   private auth = inject(AuthService);
 
   private thumbnails = new Map<number, string>();
+  showDeleteModal = false;
+  storyToDelete: StorySummary | null = null;
 
   get limitedStories(): StorySummary[] {
     if (!this.limit) return this.stories;
@@ -98,20 +112,32 @@ export class StoryCardsComponent implements OnChanges {
 
   deleteStory(event: MouseEvent, s: StorySummary) {
     event.stopPropagation();
-    const ok = confirm('Delete this story and all of its chapters?');
-    if (!ok) return;
+    this.storyToDelete = s;
+    this.showDeleteModal = true;
+  }
+
+  confirmDelete() {
+    if (!this.storyToDelete) return;
+    
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
-    this.http.delete(`${this.auth.baseUrl}/stories/${s.id}`, { headers })
+    this.http.delete(`${this.auth.baseUrl}/stories/${this.storyToDelete.id}`, { headers })
       .subscribe({
         next: () => {
-          this.stories = this.stories.filter(st => st.id !== s.id);
-          this.thumbnails.delete(s.id);
-          this.storyDeleted.emit(s.id);
+          this.stories = this.stories.filter(st => st.id !== this.storyToDelete!.id);
+          this.thumbnails.delete(this.storyToDelete!.id);
+          this.storyDeleted.emit(this.storyToDelete!.id);
+          this.cancelDelete();
         },
         error: () => {
           alert('Failed to delete story. Please try again.');
+          this.cancelDelete();
         }
       });
+  }
+
+  cancelDelete() {
+    this.showDeleteModal = false;
+    this.storyToDelete = null;
   }
 }
 

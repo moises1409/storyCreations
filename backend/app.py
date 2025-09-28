@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from db import SessionLocal
-from models import User, Story, Chapter as DBChapter, Base, AccountDeletion, CreditAddition
+from models import User, Story, Chapter as DBChapter, Base, AccountDeletion, CreditAddition, CharacterImage
 from functools import wraps
 from auth_utils import hash_password, verify_password
 from jwt_utils import create_access_token, decode_token, create_refresh_token, decode_refresh_token
@@ -21,7 +21,7 @@ except Exception:
 from io import BytesIO
 from openai import OpenAI
 from pydantic import BaseModel
-from prompts import PROMPT_USER1, PROMPT_SYSTEM_SEED, PROMPT_SYSTEM_CHAPTER, PROMPT_SYSTEM_CHAPTER_FINAL
+from prompts import PROMPT_USER1, PROMPT_SYSTEM_SEED, PROMPT_SYSTEM_CHAPTER, PROMPT_SYSTEM_CHAPTER_FINAL, PROMPT_CREATE_CHARACTER
 
 client = OpenAI()   
 
@@ -159,6 +159,32 @@ def me():
             return jsonify({"error": "not_found"}), 404
         return jsonify(user.to_dict()), 200
 
+# ---- Characters (images) ----
+@app.get("/characters")
+@require_auth
+def list_characters_images():
+    """Return all character images saved by this user in character_images table.
+
+    Shape: { items: { id, image, name }[] } (backwards-compat: also returns images: string[])
+    """
+    try:
+        with SessionLocal() as session:
+            rows = (
+                session.query(CharacterImage.id, CharacterImage.image_data, CharacterImage.name)
+                .filter(CharacterImage.user_id == g.user_id)
+                .order_by(CharacterImage.created_at.desc())
+                .all()
+            )
+            items = [
+                {"id": r[0], "image": r[1], "name": r[2]}
+                for r in rows
+            ]
+            # keep legacy images array for existing clients
+            images_only = [r[1] for r in rows]
+            return jsonify({"items": items, "images": images_only}), 200
+    except Exception as e:
+        return jsonify({"error": "list_characters_failed", "detail": str(e)}), 500
+
 # ---- Billing: Add Credits ----
 @app.post("/billing/add-credits")
 @require_auth
@@ -215,9 +241,36 @@ def list_credit_additions():
 @app.post("/ai/generate-seed")
 @require_auth
 def ai_generate_seed():  
-    topic = (request.json or {}).get("prompt") or (
+    body = request.json or {}
+    topic = body.get("prompt") or (
         "a brave young fox in a moonlit enchanted forest"
     )
+    # New: support character IDs instead of direct images
+    character_ids = body.get("character_ids") or []
+    if not isinstance(character_ids, list):
+        character_ids = []
+    # Resolve character names (and optionally images) for prompt context
+    character_names: list[str] = []
+    try:
+        if character_ids:
+            with SessionLocal() as session:
+                # constrain to this user for safety
+                ids: list[int] = []
+                for cid in character_ids:
+                    try:
+                        ids.append(int(cid))
+                    except Exception:
+                        continue
+                if ids:
+                    rows = (
+                        session.query(CharacterImage.id, CharacterImage.name)
+                        .filter(CharacterImage.user_id == g.user_id)
+                        .filter(CharacterImage.id.in_(ids))
+                        .all()
+                    )
+                    character_names = [r[1] for r in rows if (r[1] or "").strip()]
+    except Exception:
+        pass
     
     if topic:
         try:
@@ -230,12 +283,20 @@ def ai_generate_seed():
                 if not u or (u.credits or 0) <= 0:
                     return jsonify({"error": "insufficient_credits"}), 402
 
+            # If characters were provided, enrich the user prompt with their names
+            enriched_topic = topic
+            if character_names:
+                try:
+                    enriched_topic = f"{topic}. Characters: {', '.join(character_names)}."
+                except Exception:
+                    enriched_topic = topic
+
             completion = client.responses.parse(
                 # model="gpt-4o-2024-08-06",
                 model="gpt-5-nano",
                 input=[
                     {"role": "system", "content": PROMPT_SYSTEM_SEED},
-                    {"role": "user", "content": PROMPT_USER1 + topic}
+                    {"role": "user", "content": PROMPT_USER1 + enriched_topic}
                 ],
                 text_format=Chapter,
             )
@@ -256,8 +317,22 @@ def ai_generate_seed():
                     image_url=None
                 )
                 session.add(ch)
-                # Initialize cover as None for now
+                # Initialize cover and character references on story
                 story.cover_image_url = None
+                try:
+                    if character_ids:
+                        import json
+                        # Keep only ints
+                        ids = []
+                        for cid in character_ids:
+                            try:
+                                ids.append(int(cid))
+                            except Exception:
+                                continue
+                        if ids:
+                            story.character_ids_json = json.dumps(ids)
+                except Exception:
+                    pass
                 # decrement credits
                 u = session.get(User, user_id)
                 u.credits = max(0, (u.credits or 0) - 1)
@@ -378,8 +453,18 @@ def ai_generate_image():
     prompt = body.get("prompt") or (
         "a brave young fox in a moonlit enchanted forest, soft lighting, warm colors, friendly mood, storybook style."
     )
+    prompt = f"{prompt}. Use the provided reference images of the characters to ensure consistency."
+    print(f"prompt: {prompt}")
     story_id_from_client = body.get("story_id")
     chapter_id_from_client = body.get("chapter_id")
+    images_from_client = body.get("images") or []
+    print(f"images_from_client: {images_from_client}")
+    if not isinstance(images_from_client, list):
+        images_from_client = []
+    # New: allow providing character_ids, or fallback to story.character_ids_json
+    character_ids = body.get("character_ids") or []
+    if not isinstance(character_ids, list):
+        character_ids = []
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -389,14 +474,81 @@ def ai_generate_image():
         return jsonify({"error": "google_genai_not_installed"}), 500
 
     try:
+        # If no images were provided by client, try loading stored story character images via IDs first
+        if not images_from_client:
+            try:
+                import json
+                with SessionLocal() as session:
+                    story = None
+                    if chapter_id_from_client:
+                        ch = session.get(DBChapter, int(chapter_id_from_client))
+                        if ch is not None:
+                            story = session.get(Story, ch.story_id)
+                    if story is None and story_id_from_client:
+                        story = session.get(Story, int(story_id_from_client))
+                    if story is None:
+                        user_id = getattr(g, 'user_id', None)
+                        story = (
+                            session.query(Story)
+                            .filter(Story.user_id == user_id)
+                            .order_by(Story.id.desc())
+                            .first()
+                        )
+                    # First try IDs
+                    if story and getattr(story, 'character_ids_json', None):
+                        id_list = []
+                        try:
+                            parsed_ids = json.loads(story.character_ids_json)
+                            if isinstance(parsed_ids, list):
+                                id_list = [int(x) for x in parsed_ids]
+                        except Exception:
+                            id_list = []
+                        if id_list:
+                            rows = (
+                                session.query(CharacterImage.image_data)
+                                .filter(CharacterImage.user_id == g.user_id)
+                                .filter(CharacterImage.id.in_(id_list))
+                                .all()
+                            )
+                            images_from_client = [r[0] for r in rows if isinstance(r[0], str)]
+                    # Fallback to legacy images_json
+                    if not images_from_client and story and getattr(story, 'character_images_json', None):
+                        parsed = json.loads(story.character_images_json)
+                        if isinstance(parsed, list):
+                            images_from_client = [i for i in parsed if isinstance(i, str)]
+            except Exception:
+                pass
+
         client = genai.Client(api_key=api_key)
         model = "gemini-2.5-flash-image-preview"
-        contents = [
-            genai_types.Content(
-                role="user",
-                parts=[genai_types.Part.from_text(text=prompt)],
-            )
-        ]
+
+        # Helper: decode data URL -> (mime, bytes)
+        def decode_data_url(data_url: str):
+            try:
+                if data_url.startswith("data:") and ";base64," in data_url:
+                    header, b64 = data_url.split(",", 1)
+                    mime = header.split(":", 1)[1].split(";", 1)[0]
+                    return mime, base64.b64decode(b64)
+            except Exception:
+                pass
+            return None, None
+
+        # Build user parts: text + optional inline images from client
+        user_parts = [genai_types.Part.from_text(text=prompt)]
+        for img in images_from_client[:3]:
+            if isinstance(img, str):
+                mime, blob = decode_data_url(img)
+                if blob:
+                    try:
+                        # Prefer explicit inline data part constructor if available
+                        if hasattr(genai_types.Part, "from_inline_data"):
+                            user_parts.append(genai_types.Part.from_inline_data(mime_type=mime or "image/png", data=blob))
+                        else:
+                            user_parts.append(genai_types.Part.from_bytes(data=blob, mime_type=mime or "image/png"))
+                    except Exception:
+                        continue
+
+        contents = [genai_types.Content(role="user", parts=user_parts)]
         generate_content_config = genai_types.GenerateContentConfig(
             response_modalities=["IMAGE"],
         )
@@ -420,6 +572,15 @@ def ai_generate_image():
                 continue
 
         if not image_data:
+            # If client provided an image, prefer that
+            try:
+                first_img = None
+                if images_from_client:
+                    first_img = images_from_client[0] if isinstance(images_from_client[0], str) else None
+                if first_img:
+                    return jsonify({"imageUrl": first_img}), 200
+            except Exception:
+                pass
             # Fallback: return text response only
             return jsonify({"text": "".join(text_parts)}), 200
 
@@ -461,6 +622,13 @@ def ai_generate_image():
                         story = session.get(Story, ch.story_id)
                         if story is not None:
                             story.cover_image_url = data_url
+                            # If provided images were sent now and not yet stored, persist on story
+                            try:
+                                if images_from_client and not getattr(story, 'character_images_json', None):
+                                    import json
+                                    story.character_images_json = json.dumps([i for i in images_from_client if isinstance(i, str)])
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                     session.commit()
@@ -470,6 +638,211 @@ def ai_generate_image():
         return jsonify({"imageUrl": data_url}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ---- Character Image Generation (stateless) ----
+@app.post("/ai/generate-character")
+@require_auth
+def ai_generate_character():
+    """Generate a character image from one input image and a prompt.
+
+    Body JSON: { "prompt": string, "image": string(data URL) }
+    Returns: { "imageUrl": dataUrl }
+    No DB persistence/retrieval.
+    """
+    body = request.json or {}
+    #prompt = body.get("prompt") or "Generate a friendly, kid-safe character image."
+    prompt = " Keep the character's identity and pose. Transform the uploaded portrait into a kid-friendly character. Disney Pixar style."
+    prompt = PROMPT_CREATE_CHARACTER
+    image_data_url = body.get("image") or None
+
+    # Check credits BEFORE invoking LLM
+    user_id = getattr(g, 'user_id', None)
+    if not user_id:
+        return jsonify({"error": "unauthorized"}), 401
+    with SessionLocal() as session:
+        u = session.get(User, user_id)
+        if not u or (u.credits or 0) <= 0:
+            return jsonify({"error": "insufficient_credits"}), 402
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return jsonify({"error": "missing_gemini_api_key"}), 400
+
+    if genai is None:
+        return jsonify({"error": "google_genai_not_installed"}), 500
+
+    # Helper: decode data URL -> (mime, bytes)
+    def decode_data_url(data_url: str):
+        try:
+            if data_url and data_url.startswith("data:") and ";base64," in data_url:
+                header, b64 = data_url.split(",", 1)
+                mime = header.split(":", 1)[1].split(";", 1)[0]
+                return mime, base64.b64decode(b64)
+        except Exception:
+            pass
+        return None, None
+
+    try:
+        mime, blob = decode_data_url(image_data_url) if image_data_url else (None, None)
+        if not blob:
+            return jsonify({"error": "missing_image"}), 400
+
+        client = genai.Client(api_key=api_key)
+        model = "gemini-2.5-flash-image-preview"
+
+        parts = [genai_types.Part.from_text(text=prompt)]
+        if hasattr(genai_types.Part, "from_inline_data"):
+            parts.append(genai_types.Part.from_inline_data(mime_type=mime or "image/png", data=blob))
+        else:
+            parts.append(genai_types.Part.from_bytes(data=blob, mime_type=mime or "image/png"))
+
+        contents = [genai_types.Content(role="user", parts=parts)]
+        generate_content_config = genai_types.GenerateContentConfig(response_modalities=["IMAGE"])
+
+        out_data = None
+        out_mime = None
+        for chunk in client.models.generate_content_stream(model=model, contents=contents, config=generate_content_config):
+            try:
+                cand = chunk.candidates[0]
+                if cand and cand.content and cand.content.parts:
+                    part0 = cand.content.parts[0]
+                    if getattr(part0, "inline_data", None) and getattr(part0.inline_data, "data", None):
+                        out_data = part0.inline_data.data
+                        out_mime = getattr(part0.inline_data, "mime_type", None) or "image/png"
+                        break
+            except Exception:
+                continue
+
+        if not out_data:
+            return jsonify({"error": "generation_failed"}), 500
+
+        base64_data = base64.b64encode(out_data).decode("utf-8")
+        data_url = f"data:{out_mime};base64,{base64_data}"
+        
+        # Decrement credits after successful generation
+        try:
+            with SessionLocal() as session:
+                u = session.get(User, user_id)
+                if u:
+                    u.credits = max(0, (u.credits or 0) - 1)
+                    session.commit()
+        except Exception as e:
+            print(f"Failed to decrement credits: {e}")
+        
+        return jsonify({"imageUrl": data_url}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ---- Character Image Generation from Text (stateless) ----
+@app.post("/ai/generate-character-from-text")
+@require_auth
+def ai_generate_character_from_text():
+    """Generate a character image from text description only.
+
+    Body JSON: { "prompt": string }
+    Returns: { "imageUrl": dataUrl }
+    No DB persistence/retrieval.
+    """
+    body = request.json or {}
+    prompt = body.get("prompt") or "Create a friendly, kid-safe character image."
+    # Add white background instruction to the prompt
+    prompt = f"{prompt} Use a white background. Do not add any object, just generate the character."
+
+    # Check credits BEFORE invoking LLM
+    user_id = getattr(g, 'user_id', None)
+    if not user_id:
+        return jsonify({"error": "unauthorized"}), 401
+    with SessionLocal() as session:
+        u = session.get(User, user_id)
+        if not u or (u.credits or 0) <= 0:
+            return jsonify({"error": "insufficient_credits"}), 402
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return jsonify({"error": "missing_gemini_api_key"}), 400
+
+    if genai is None:
+        return jsonify({"error": "google_genai_not_installed"}), 500
+
+    try:
+        client = genai.Client(api_key=api_key)
+        model = "gemini-2.5-flash-image-preview"
+
+        parts = [genai_types.Part.from_text(text=prompt)]
+        contents = [genai_types.Content(role="user", parts=parts)]
+        generate_content_config = genai_types.GenerateContentConfig(response_modalities=["IMAGE"])
+
+        out_data = None
+        out_mime = None
+        for chunk in client.models.generate_content_stream(model=model, contents=contents, config=generate_content_config):
+            try:
+                cand = chunk.candidates[0]
+                if cand and cand.content and cand.content.parts:
+                    part0 = cand.content.parts[0]
+                    if getattr(part0, "inline_data", None) and getattr(part0.inline_data, "data", None):
+                        out_data = part0.inline_data.data
+                        out_mime = getattr(part0.inline_data, "mime_type", None) or "image/png"
+                        break
+            except Exception:
+                continue
+
+        if not out_data:
+            return jsonify({"error": "generation_failed"}), 500
+
+        base64_data = base64.b64encode(out_data).decode("utf-8")
+        data_url = f"data:{out_mime};base64,{base64_data}"
+        
+        # Decrement credits after successful generation
+        try:
+            with SessionLocal() as session:
+                u = session.get(User, user_id)
+                if u:
+                    u.credits = max(0, (u.credits or 0) - 1)
+                    session.commit()
+        except Exception as e:
+            print(f"Failed to decrement credits: {e}")
+        
+        return jsonify({"imageUrl": data_url}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Save character image (explicit)
+@app.post("/characters")
+@require_auth
+def save_character_image():
+    body = request.get_json(silent=True) or {}
+    image = body.get("image")
+    name = (body.get("name") or None)
+    if not image or not isinstance(image, str):
+        return jsonify({"error": "missing_image"}), 400
+    try:
+        with SessionLocal() as session:
+            rec = CharacterImage(user_id=g.user_id, image_data=image, name=name)
+            session.add(rec)
+            session.commit()
+            return jsonify({"id": rec.id, "image": rec.image_data, "name": rec.name}), 201
+    except Exception as e:
+        return jsonify({"error": "save_failed", "detail": str(e)}), 500
+
+# Delete character image
+@app.delete("/characters/<int:character_id>")
+@require_auth
+def delete_character_image(character_id: int):
+    try:
+        with SessionLocal() as session:
+            character = session.query(CharacterImage).filter(
+                CharacterImage.id == character_id,
+                CharacterImage.user_id == g.user_id
+            ).first()
+            
+            if not character:
+                return jsonify({"error": "character_not_found"}), 404
+            
+            session.delete(character)
+            session.commit()
+            return jsonify({"message": "Character deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": "delete_failed", "detail": str(e)}), 500
 
 # ---------- Stories endpoints ----------
 @app.get("/stories")
@@ -566,10 +939,22 @@ def delete_account():
             session.flush()
         except Exception as e:
             print(f"AccountDeletion record failed: {e}")
+        # Delete user's character images
+        character_images = session.query(CharacterImage).filter(CharacterImage.user_id == user.id).all()
+        for ci in character_images:
+            session.delete(ci)
+        
+        # Delete user's credit additions
+        credit_additions = session.query(CreditAddition).filter(CreditAddition.user_id == user.id).all()
+        for ca in credit_additions:
+            session.delete(ca)
+        
         # Delete user's stories (chapters cascade via relationship)
         stories = session.query(Story).filter(Story.user_id == user.id).all()
         for s in stories:
             session.delete(s)
+        
+        # Finally delete the user
         session.delete(user)
         session.commit()
         return jsonify({"ok": True}), 200
