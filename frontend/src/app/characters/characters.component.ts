@@ -17,7 +17,15 @@ import { Router } from '@angular/router';
     <div class="dashboard-container main-with-sidebar">
       <div class="characters-section">
         <h1>My Characters</h1>
-        <div class="characters-grid" *ngIf="myCharacters.length > 0; else noCharacters">
+        
+        <!-- Loading Spinner -->
+        <div *ngIf="loading" class="loading-container">
+          <div class="spinner"></div>
+          <p>Loading your characters...</p>
+        </div>
+        
+        <!-- Characters Grid -->
+        <div class="characters-grid" *ngIf="!loading && myCharacters.length > 0">
           <div class="character-card" *ngFor="let character of myCharacters">
             <div class="character-image">
               <img [src]="character.image" [alt]="character.name || 'Character'" />
@@ -32,11 +40,11 @@ import { Router } from '@angular/router';
             </button>
           </div>
         </div>
-        <ng-template #noCharacters>
-          <div class="no-characters">
-            <p>No characters created yet. Create your first character!</p>
-          </div>
-        </ng-template>
+        
+        <!-- No Characters Message -->
+        <div *ngIf="!loading && myCharacters.length === 0" class="no-characters">
+          <p>No characters created yet. Create your first character!</p>
+        </div>
       </div>
     </div>
     
@@ -87,6 +95,35 @@ import { Router } from '@angular/router';
     .delete-btn svg { width: 14px; height: 14px; color: white; }
     .no-characters { text-align: center; padding: 2rem; color: var(--text-gray); }
     .no-characters p { margin: 0; font-size: 1.1rem; }
+    
+    /* Loading Spinner Styles */
+    .loading-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+      color: var(--text-gray);
+    }
+    
+    .loading-container p {
+      margin-top: 1rem;
+      font-size: 1.1rem;
+      color: var(--text-gray);
+    }
+    
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 4px solid var(--light-gray);
+      border-top-color: var(--primary-green);
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
     @media (max-width: 900px) {
       .dashboard-container.main-with-sidebar { padding-left: 30px; }
     }
@@ -101,12 +138,14 @@ export class CharactersComponent {
   myCharacters: { id: number; image: string; name?: string | null }[] = [];
   showDeleteModal = false;
   characterToDelete: number | null = null;
+  loading = true;
 
   ngOnInit() { 
     this.loadMyCharacters();
   }
 
   loadMyCharacters() {
+    this.loading = true;
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
     this.http.get<{ items?: {id:number; image:string; name?: string | null}[]; images?: string[] }>(`${this.auth.baseUrl}/characters`, { headers })
       .subscribe({ 
@@ -118,8 +157,12 @@ export class CharactersComponent {
             const imgs = (res?.images || []).filter(Boolean) as string[];
             this.myCharacters = imgs.map((img, idx) => ({ id: idx + 1, image: img }));
           }
+          this.loading = false;
         },
-        error: () => { this.myCharacters = []; }
+        error: () => { 
+          this.myCharacters = [];
+          this.loading = false;
+        }
       });
   }
 

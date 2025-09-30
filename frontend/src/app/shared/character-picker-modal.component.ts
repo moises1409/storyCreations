@@ -22,11 +22,23 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
             <button type="button" class="create-btn" (click)="openBuilder()">Create new character</button>
           </div>
 
-          <div class="grid">
+          <!-- Loading Spinner -->
+          <div *ngIf="loadingItems" class="loading-container">
+            <div class="spinner"></div>
+            <p>Loading characters...</p>
+          </div>
+
+          <!-- Characters Grid -->
+          <div class="grid" *ngIf="!loadingItems && items.length > 0">
             <button type="button" class="cell" *ngFor="let item of items" (click)="pick.emit(item)">
               <img [src]="item.image" alt="character" />
               <div class="cell-name" *ngIf="item.name">{{ item.name }}</div>
             </button>
+          </div>
+
+          <!-- No Characters Message -->
+          <div *ngIf="!loadingItems && items.length === 0" class="no-characters">
+            <p>No characters available. Create your first character!</p>
           </div>
         </div>
 
@@ -106,7 +118,9 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
               
               <div class="row">
                 <button class="solid" *ngIf="!generatedImage" (click)="onBuilderGenerate()" [disabled]="!canGenerate() || loading">{{ loading ? 'Generating…' : 'Generate' }}</button>
-                <button class="outline" *ngIf="generatedImage" (click)="onBuilderSave()">Save</button>
+                <button class="outline" *ngIf="generatedImage" (click)="onBuilderSave()" [disabled]="savingCharacter">
+                  {{ savingCharacter ? 'Creating...' : 'Create Character' }}
+                </button>
                 <button class="outline" *ngIf="generatedImage" (click)="onBuilderReset()">Reset</button>
               </div>
             </div>
@@ -272,8 +286,48 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
     .cell img { width: 100%; height: 100%; object-fit: cover; display:block; }
     .cell-name { position:absolute; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); color:#fff; font-size: 0.8rem; padding: 0.25rem 0.4rem; text-align:center; }
     .footer { display:flex; justify-content:flex-end; padding: 0.5rem 1rem 1rem; }
-    .cancel { background: transparent; color: var(--text-gray); border: 1px solid var(--light-gray); border-radius: 8px; padding: 0.4rem 0.7rem; cursor: pointer; }
-    .cancel:hover { color: #fff; border-color: var(--primary-green); }
+     .cancel { background: transparent; color: var(--text-gray); border: 1px solid var(--light-gray); border-radius: 8px; padding: 0.4rem 0.7rem; cursor: pointer; }
+     .cancel:hover { color: #fff; border-color: var(--primary-green); }
+     
+     /* Loading Spinner Styles */
+     .loading-container {
+       display: flex;
+       flex-direction: column;
+       align-items: center;
+       justify-content: center;
+       padding: 2rem;
+       color: var(--text-gray);
+     }
+     
+     .loading-container p {
+       margin-top: 1rem;
+       font-size: 1rem;
+       color: var(--text-gray);
+     }
+     
+     .spinner {
+       width: 32px;
+       height: 32px;
+       border-radius: 50%;
+       border: 3px solid var(--light-gray);
+       border-top-color: var(--primary-green);
+       animation: spin 1s linear infinite;
+     }
+     
+     @keyframes spin {
+       to { transform: rotate(360deg); }
+     }
+     
+     .no-characters {
+       text-align: center;
+       padding: 2rem;
+       color: var(--text-gray);
+     }
+     
+     .no-characters p {
+       margin: 0;
+       font-size: 1rem;
+     }
 
     /* Builder */
     .builder { display:grid; grid-template-columns: 1.2fr 1fr; gap: 1rem; position: relative; z-index: 2100; }
@@ -369,6 +423,7 @@ export class CharacterPickerModalComponent implements OnDestroy {
 
   // Items from backend
   items: { id:number; image:string; name?: string | null }[] = [];
+  loadingItems = false;
 
   // Builder state
   showBuilder = false;
@@ -378,6 +433,7 @@ export class CharacterPickerModalComponent implements OnDestroy {
   characterName: string = '';
   characterDescription: string = '';
   loading = false;
+  savingCharacter = false;
   showAddCredits = false;
   
   // Camera state
@@ -406,6 +462,7 @@ export class CharacterPickerModalComponent implements OnDestroy {
     this.characterName = ''; 
     this.characterDescription = '';
     this.loading = false;
+    this.savingCharacter = false;
     this.stopCamera();
   }
 
@@ -416,6 +473,7 @@ export class CharacterPickerModalComponent implements OnDestroy {
     this.characterName = '';
     this.characterDescription = '';
     this.loading = false;
+    this.savingCharacter = false;
     this.stopCamera();
   }
 
@@ -473,10 +531,21 @@ export class CharacterPickerModalComponent implements OnDestroy {
   }
 
   onBuilderSave() {
-    if (!this.generatedImage) return;
+    if (!this.generatedImage || this.savingCharacter) return;
+    
+    this.savingCharacter = true;
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
     this.http.post<{ id:number; image:string; name?: string }>(`${this.auth.baseUrl}/characters`, { image: this.generatedImage, name: (this.characterName || null) }, { headers })
-      .subscribe({ next: () => { this.closeBuilder(); this.loadExisting(); } });
+      .subscribe({ 
+        next: () => { 
+          this.closeBuilder(); 
+          this.loadExisting(); 
+          this.savingCharacter = false;
+        },
+        error: () => {
+          this.savingCharacter = false;
+        }
+      });
   }
 
   onAddCredits(plan: 'starter'|'pro'|'max') {
@@ -568,6 +637,7 @@ export class CharacterPickerModalComponent implements OnDestroy {
   }
 
   private loadExisting() {
+    this.loadingItems = true;
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
     const url = `${this.auth.baseUrl}/characters`;
     this.http.get<{ items?: {id:number; image:string; name?: string | null}[]; images?: string[] }>(url, { headers }).subscribe({
@@ -579,8 +649,12 @@ export class CharacterPickerModalComponent implements OnDestroy {
           const imgs = (res?.images || []).filter(Boolean) as string[];
           this.items = imgs.map((img, idx) => ({ id: idx + 1, image: img }));
         }
+        this.loadingItems = false;
       },
-      error: () => { this.items = []; }
+      error: () => { 
+        this.items = [];
+        this.loadingItems = false;
+      }
     });
   }
 }

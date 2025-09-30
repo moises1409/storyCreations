@@ -697,21 +697,44 @@ def ai_generate_character():
             parts.append(genai_types.Part.from_bytes(data=blob, mime_type=mime or "image/png"))
 
         contents = [genai_types.Content(role="user", parts=parts)]
-        generate_content_config = genai_types.GenerateContentConfig(response_modalities=["IMAGE"])
-
-        out_data = None
-        out_mime = None
-        for chunk in client.models.generate_content_stream(model=model, contents=contents, config=generate_content_config):
+        
+        # Try with response_modalities first, fallback to default if it fails
+        try:
+            generate_content_config = genai_types.GenerateContentConfig(response_modalities=["IMAGE"])
+            out_data = None
+            out_mime = None
+            for chunk in client.models.generate_content_stream(model=model, contents=contents, config=generate_content_config):
+                try:
+                    cand = chunk.candidates[0]
+                    if cand and cand.content and cand.content.parts:
+                        part0 = cand.content.parts[0]
+                        if getattr(part0, "inline_data", None) and getattr(part0.inline_data, "data", None):
+                            out_data = part0.inline_data.data
+                            out_mime = getattr(part0.inline_data, "mime_type", None) or "image/png"
+                            break
+                except Exception:
+                    continue
+        except Exception as e:
+            print(f"Error with response_modalities, trying without: {e}")
+            # Fallback: try without response_modalities
             try:
-                cand = chunk.candidates[0]
-                if cand and cand.content and cand.content.parts:
-                    part0 = cand.content.parts[0]
-                    if getattr(part0, "inline_data", None) and getattr(part0.inline_data, "data", None):
-                        out_data = part0.inline_data.data
-                        out_mime = getattr(part0.inline_data, "mime_type", None) or "image/png"
-                        break
-            except Exception:
-                continue
+                generate_content_config = genai_types.GenerateContentConfig()
+                out_data = None
+                out_mime = None
+                for chunk in client.models.generate_content_stream(model=model, contents=contents, config=generate_content_config):
+                    try:
+                        cand = chunk.candidates[0]
+                        if cand and cand.content and cand.content.parts:
+                            part0 = cand.content.parts[0]
+                            if getattr(part0, "inline_data", None) and getattr(part0.inline_data, "data", None):
+                                out_data = part0.inline_data.data
+                                out_mime = getattr(part0.inline_data, "mime_type", None) or "image/png"
+                                break
+                    except Exception:
+                        continue
+            except Exception as e2:
+                print(f"Error without response_modalities: {e2}")
+                return jsonify({"error": f"Generation failed: {str(e2)}"}), 500
 
         if not out_data:
             return jsonify({"error": "generation_failed"}), 500
