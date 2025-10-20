@@ -61,4 +61,20 @@ export class LandingComponent implements OnInit, OnDestroy {
   openSignup() {
     this.modalService.openSignup();
   }
+
+  openSharedStory(storyId: string) {
+    // Mapeo de IDs de ejemplo a IDs reales de historias
+    const storyIdMap: { [key: string]: string } = {
+      'STORY_ID_1': '58', // Reemplaza con el ID real de "The Moonlight Detective"
+      'STORY_ID_2': '2', // Reemplaza con el ID real de "Jungle of Giggles"
+      'STORY_ID_3': '3', // Reemplaza con el ID real de "The Rainbow Bakery"
+      'STORY_ID_4': '4'  // Reemplaza con el ID real de "Captain Star and the Lost Planet"
+    };
+
+    const realStoryId = storyIdMap[storyId];
+    if (realStoryId) {
+      // Abrir en nueva pestaña para que el usuario pueda ver la historia sin registrarse
+      window.open(`https://www.linked-ideas.com/share/story/${realStoryId}`, '_blank');
+    }
+  }
 }

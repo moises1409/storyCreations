@@ -8,6 +8,7 @@ import { AccountComponent } from './account/account.component';
 import { PrivacyComponent } from './privacy/privacy.component';
 import { TermsComponent } from './terms/terms.component';
 import { CharactersComponent } from './characters/characters.component';
+import { ShareStoryComponent } from './shared/share-story.component';
 
 
 export const routes: Routes = [
@@ -18,6 +19,7 @@ export const routes: Routes = [
   { path: 'account', component: AccountComponent, canActivate: [authGuard] },
   { path: 'story/new', component: StoryComponent, canActivate: [authGuard] },
   { path: 'story/:id', component: StoryComponent, canActivate: [authGuard] },
+  { path: 'share/story/:id', component: ShareStoryComponent },
   { path: 'privacy', component: PrivacyComponent },
   { path: 'terms', component: TermsComponent },
   { path: '**', redirectTo: '' }

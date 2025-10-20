@@ -22,6 +22,12 @@ FROM nginx:alpine
 # Copy built Angular app from the build stage to Nginx's html directory
 COPY --from=build /app/dist/frontend/browser /usr/share/nginx/html
 
+# Copy custom Nginx configuration template
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+
+# Set default backend URL for local development
+ENV BACKEND_URL=http://flaskapp2:4000
+
 # Expose port 80
 EXPOSE 80
 

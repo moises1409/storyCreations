@@ -32,7 +32,23 @@
           <div class="welcome-card chapter-card">
             <div style="grid-column: 1 / -1; display:flex; justify-content: space-between; align-items:center; margin-bottom:0.5rem;">
               <div class="meta"><div class="title">Chapter {{ i + 1 }}</div></div>
-              <button class="small" (click)="c.collapsed = !c.collapsed">{{ c.collapsed ? 'Expand' : 'Collapse' }}</button>
+              <div style="display:flex; gap:0.5rem;">
+                <button 
+                  class="small" 
+                  *ngIf="c.userPrompt && loadingTextIndex !== i && loadingImageIndex !== i && (c.text || '').trim().length > 0 && !!c.imageUrl" 
+                  (click)="openEditModal(i)">
+                  Regenerate Chapter
+                </button>
+                <button 
+                  class="small" 
+                  *ngIf="loadingTextIndex !== i && loadingImageIndex !== i && (c.text || '').trim().length > 0 && !!c.imageUrl" 
+                  (click)="regenerateImage(i)">
+                  Regenerate Image
+                </button>
+                <button class="small" (click)="c.collapsed = !c.collapsed" [title]="c.collapsed ? 'Expand' : 'Collapse'" style="padding: 0.5rem; min-width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center;">
+             <span style="font-size: 1rem; color: #6b7280; font-weight: bold;">{{ c.collapsed ? '▼' : '▲' }}</span>
+           </button>
+              </div>
             </div>
             <div class="chapter-left">
               <h2 class="chapter-title">{{ c.title }}</h2>
@@ -92,7 +108,63 @@
   [open]="showEbook" 
   [chapters]="chapters" 
   [storyTitle]="historyTitle"
+  [storyId]="storyId?.toString() || ''"
   (close)="closeEbook()">
 </app-ebook-viewer>
 
+<!-- Edit Chapter Modal -->
+<div *ngIf="showEditModal" class="modal-overlay" (click)="closeEditModal()">
+  <div class="modal-content" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Edit Chapter {{ (editingChapterIndex || 0) + 1 }}</h3>
+      <button class="close-btn" (click)="closeEditModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="editPrompt">Chapter Prompt:</label>
+        <textarea 
+          id="editPrompt"
+          class="form-input" 
+          rows="4" 
+          [formControl]="editPrompt" 
+          placeholder="Modify your prompt for this chapter...">
+        </textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="small" (click)="closeEditModal()" [disabled]="loadingEdit">Cancel</button>
+      <button class="dashboard-btn" (click)="saveEditedChapter()" [disabled]="loadingEdit || !editPrompt.value?.trim()">
+        {{ loadingEdit ? 'Regenerating...' : 'Regenerate Chapter' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Regenerate Image Modal -->
+<div *ngIf="showRegenImageModal" class="modal-overlay" (click)="closeRegenImageModal()">
+  <div class="modal-content" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Regenerate Image {{ (regenImageIndex || 0) + 1 }}</h3>
+      <button class="close-btn" (click)="closeRegenImageModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="imageEditPrompt">Image Edit Prompt:</label>
+        <textarea 
+          id="imageEditPrompt"
+          class="form-input" 
+          rows="4" 
+          [formControl]="imageEditPrompt" 
+          placeholder="Describe what you want to change in the image (e.g., adjust background, add a small detail, keep character identity)">
+        </textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="small" (click)="closeRegenImageModal()" [disabled]="loadingImageEdit">Cancel</button>
+      <button class="dashboard-btn" (click)="submitRegenImage()" [disabled]="loadingImageEdit || !imageEditPrompt.value?.trim()">
+        {{ loadingImageEdit ? 'Regenerating…' : 'Regenerate Image' }}
+      </button>
+    </div>
+  </div>
+</div>
 

@@ -10,3 +10,6 @@ PyJWT
 google-genai
 openai
 pydantic
+requests
+azure-storage-blob
+Pillow==10.4.0

@@ -1,13 +1,14 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 
-export type ModalType = 'login' | 'signup' | null;
+export type ModalType = 'login' | 'signup' | 'forgot' | 'reset' | null;
 
 @Injectable({
   providedIn: 'root'
 })
 export class ModalService {
   private _currentModal$ = new BehaviorSubject<ModalType>(null);
+  private _resetToken: string | null = null;
   
   currentModal$ = this._currentModal$.asObservable();
 
@@ -21,6 +22,27 @@ export class ModalService {
 
   openSignup() {
     this._currentModal$.next('signup');
+  }
+
+  openForgotPassword() {
+    this._currentModal$.next('forgot');
+  }
+
+  openResetPassword() {
+    this._currentModal$.next('reset');
+  }
+
+  openResetPasswordWithToken(token: string) {
+    this._resetToken = token || null;
+    this._currentModal$.next('reset');
+  }
+
+  getResetToken() {
+    return this._resetToken;
+  }
+
+  clearResetToken() {
+    this._resetToken = null;
   }
 
   close() {

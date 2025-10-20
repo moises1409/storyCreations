@@ -3,13 +3,14 @@ from flask_cors import CORS
 import os
 from datetime import date
 from dotenv import load_dotenv
+import requests
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from db import SessionLocal
 from models import User, Story, Chapter as DBChapter, Base, AccountDeletion, CreditAddition, CharacterImage
 from functools import wraps
 from auth_utils import hash_password, verify_password
-from jwt_utils import create_access_token, decode_token, create_refresh_token, decode_refresh_token
+from jwt_utils import create_access_token, decode_token, create_refresh_token, decode_refresh_token, create_password_reset_token, decode_password_reset_token
 import base64
 import mimetypes
 try:
@@ -19,18 +20,125 @@ except Exception:
     genai = None
     genai_types = None
 from io import BytesIO
+import logging
 from openai import OpenAI
 from pydantic import BaseModel
-from prompts import PROMPT_USER1, PROMPT_SYSTEM_SEED, PROMPT_SYSTEM_CHAPTER, PROMPT_SYSTEM_CHAPTER_FINAL, PROMPT_CREATE_CHARACTER
+from prompts import PROMPT_USER1, PROMPT_USER2, PROMPT_SYSTEM_SEED, PROMPT_SYSTEM_CHAPTER, PROMPT_SYSTEM_CHAPTER_FINAL, PROMPT_CREATE_CHARACTER
+from storage_utils import upload_image_and_thumbnail, parse_data_url, upload_bytes, sign_blob_url, download_blob_bytes_from_url, make_public_url
 
-client = OpenAI()   
+# Audio generation control
+AUDIO_ENABLED = os.getenv('AUDIO', '0') == '1'
+import asyncio
+import concurrent.futures
+import base64
 
-load_dotenv()
+client = OpenAI()  
+#logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+
+try:
+    load_dotenv(verbose=True)
+except Exception as e:
+    print(f"Warning: Could not load .env file: {e}")
+    print("Continuing without .env file...")
 
 class Chapter(BaseModel):
    text: str
+   title_story: str
+   title_chapter: str
    image_prompt: str
    choices: list[str] | None = None
+
+def get_voice_id_for_language(language: str = None) -> str | None:
+    """Get the appropriate voice ID based on language"""
+    # Normalize language code: take primary subtag (e.g., 'fr-FR' -> 'fr')
+    code = (language or '').strip().lower()
+    if not code:
+        return os.getenv('ELEVENLABS_VOICE_ID')
+    if '-' in code:
+        code = code.split('-', 1)[0]
+    if '_' in code:
+        code = code.split('_', 1)[0]
+
+    voice_mapping = {
+        'en': os.getenv('ELEVENLABS_VOICE_ID_EN', os.getenv('ELEVENLABS_VOICE_ID')),
+        'es': os.getenv('ELEVENLABS_VOICE_ID_ES', os.getenv('ELEVENLABS_VOICE_ID')),
+        'fr': os.getenv('ELEVENLABS_VOICE_ID_FR', os.getenv('ELEVENLABS_VOICE_ID')),
+        'de': os.getenv('ELEVENLABS_VOICE_ID_DE', os.getenv('ELEVENLABS_VOICE_ID')),
+        'it': os.getenv('ELEVENLABS_VOICE_ID_IT', os.getenv('ELEVENLABS_VOICE_ID')),
+    }
+    return voice_mapping.get(code, os.getenv('ELEVENLABS_VOICE_ID'))
+
+def generate_audio_elevenlabs(text: str, language: str = None, user_id: int | None = None) -> str | None:
+    """Generate audio using ElevenLabs and return a Blob URL (mp3)"""
+    try:
+        api_key = os.getenv('ELEVENLABS_API_KEY')
+        
+        # Get voice ID based on language
+        print(f"Generating audio for language: {language}")
+        voice_id = get_voice_id_for_language(language)
+        print(f"Voice ID: {voice_id}")
+        
+        if not api_key or not voice_id:
+            print("ElevenLabs configuration not found")
+            return None
+        
+        # Clean and validate text
+        if not text or not text.strip():
+            print("Empty text provided for audio generation")
+            return None
+        
+        cleaned_text = text.strip()
+        if language == 'fr':
+            cleaned_text = cleaned_text.replace('…', '...')
+        
+        # Limit text length to avoid API limits
+        if len(cleaned_text) > 5000:
+            cleaned_text = cleaned_text[:5000] + "..."
+            print(f"Text truncated to 5000 characters for language: {language}")
+        
+        headers = {
+            'Accept': 'audio/mpeg',
+            'Content-Type': 'application/json',
+            'xi-api-key': api_key
+        }
+        
+        body = {
+            'text': cleaned_text,
+            'model_id': 'eleven_flash_v2_5',
+            'voice_settings': {
+                'stability': 0.5,
+                'similarity_boost': 0.5,
+                'style': 0.0,
+                'use_speaker_boost': True
+            }
+        }
+        
+        response = requests.post(
+            f'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}', 
+            headers=headers, json=body, timeout=30
+        )
+        
+        if response.status_code == 200:
+            # Upload MP3 bytes to Blob and return URL
+            try:
+                prefix = f"users/{user_id or 'anon'}/audio"
+                url = upload_bytes(response.content, "audio/mpeg", prefix=prefix, extension="mp3")
+                from storage_utils import sign_blob_url as _sign
+                return _sign(url)
+            except Exception as e:
+                print(f"Audio upload failed: {e}")
+                return None
+        else:
+            print(f"Failed to generate speech: {response.status_code}")
+            print(f"Response content: {response.text}")
+            print(f"Voice ID used: {voice_id}")
+            print(f"Language: {language}")
+            print(f"Text length: {len(text)} characters")
+            return None
+            
+    except Exception as e:
+        print(f"Error generating audio: {e}")
+        return None
   
 
 app = Flask(__name__)
@@ -39,8 +147,22 @@ CORS(
     resources={r"/*": {"origins": "*"}},
     supports_credentials=True,
     allow_headers=["Authorization", "Content-Type"],
-    methods=["GET", "POST", "OPTIONS", "DELETE"]
+    methods=["GET", "POST", "OPTIONS", "DELETE", "PATCH"]
 )
+
+# Environment defaults for local Azurite if not provided
+if not os.getenv("AZURE_STORAGE_CONNECTION_STRING"):
+    # Default Azurite connection string for local dev
+    os.environ["AZURE_STORAGE_CONNECTION_STRING"] = (
+        "DefaultEndpointsProtocol=http;"
+        "AccountName=devstoreaccount1;"
+        "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+        "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+        "QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;"
+        "TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;"
+    )
+if not os.getenv("AZURE_STORAGE_CONTAINER"):
+    os.environ["AZURE_STORAGE_CONTAINER"] = "images"
 
 @app.route("/test", methods=["GET"])
 def get_api_test():
@@ -134,6 +256,41 @@ def login():
             "user": {"id": user.id, "email": user.email, "name": user.name, "credits": user.credits}
         }), 200
 
+@app.post("/auth/forgot-password")
+def forgot_password():
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"error": "missing_email"}), 400
+    with SessionLocal() as session:
+        user = session.query(User).filter(User.email == email).first()
+        if not user:
+            # Avoid account enumeration
+            return jsonify({"ok": True}), 200
+        token = create_password_reset_token(user.id)
+        # In production, email the token link. For now, return the token.
+        return jsonify({"ok": True, "reset_token": token}), 200
+
+@app.post("/auth/reset-password")
+def reset_password():
+    data = request.get_json(silent=True) or {}
+    token = (data.get("token") or "").strip()
+    new_password = (data.get("password") or "").strip()
+    if not token or not new_password:
+        return jsonify({"error": "missing_fields"}), 400
+    try:
+        payload = decode_password_reset_token(token)
+        user_id = int(payload.get("sub"))
+    except Exception:
+        return jsonify({"error": "invalid_or_expired"}), 400
+    with SessionLocal() as session:
+        user = session.get(User, user_id)
+        if not user:
+            return jsonify({"error": "invalid_user"}), 400
+        user.password_hash = hash_password(new_password)
+        session.commit()
+    return jsonify({"ok": True}), 200
+
 @app.post("/auth/refresh")
 def refresh_access():
     data = request.get_json(silent=True) or {}
@@ -163,11 +320,13 @@ def me():
 @app.get("/characters")
 @require_auth
 def list_characters_images():
-    """Return all character images saved by this user in character_images table.
+    """Return character entries for this user.
 
-    Shape: { items: { id, image, name }[] } (backwards-compat: also returns images: string[])
+    Default returns items with image URLs for backwards compatibility.
+    You can pass include_images=0 to omit the legacy images array.
     """
     try:
+        include_images = (request.args.get("include_images", "1") != "0")
         with SessionLocal() as session:
             rows = (
                 session.query(CharacterImage.id, CharacterImage.image_data, CharacterImage.name)
@@ -176,12 +335,13 @@ def list_characters_images():
                 .all()
             )
             items = [
-                {"id": r[0], "image": r[1], "name": r[2]}
+                {"id": r[0], "image": sign_blob_url(r[1]) if isinstance(r[1], str) else r[1], "name": r[2]}
                 for r in rows
             ]
-            # keep legacy images array for existing clients
-            images_only = [r[1] for r in rows]
-            return jsonify({"items": items, "images": images_only}), 200
+            out = {"items": items}
+            if include_images:
+                out["images"] = [sign_blob_url(r[1]) if isinstance(r[1], str) else r[1] for r in rows]
+            return jsonify(out), 200
     except Exception as e:
         return jsonify({"error": "list_characters_failed", "detail": str(e)}), 500
 
@@ -247,14 +407,37 @@ def ai_generate_seed():
     )
     # New: support character IDs instead of direct images
     character_ids = body.get("character_ids") or []
+    # Optional: include character objects to avoid DB lookups for names
+    characters = body.get("characters") or []  # [{id, name}]
+    # Optional: include character images to persist on story immediately
+    character_images = body.get("character_images") or []  # [dataUrl or URL]
+    
     if not isinstance(character_ids, list):
         character_ids = []
-    # Resolve character names (and optionally images) for prompt context
+    # New: support language selection
+    language = body.get("language") or ""
+    # Control persistence: allow generation without DB writes to later commit once both text and image are ready
+    persist = True
+    try:
+        persist = bool(body.get("persist", True))
+    except Exception:
+        persist = True
+
+    # Resolve character names for prompt context (prefer client-provided to avoid DB reads)
     character_names: list[str] = []
     try:
-        if character_ids:
+        # Use provided characters first
+        if isinstance(characters, list) and characters:
+            for c in characters:
+                try:
+                    name = (c.get("name") or "").strip()
+                    if name:
+                        character_names.append(name)
+                except Exception:
+                    continue
+        # Fallback to DB only if no names were provided and ids exist
+        if not character_names and character_ids:
             with SessionLocal() as session:
-                # constrain to this user for safety
                 ids: list[int] = []
                 for cid in character_ids:
                     try:
@@ -280,6 +463,8 @@ def ai_generate_seed():
                 return jsonify({"error": "unauthorized"}), 401
             with SessionLocal() as session:
                 u = session.get(User, user_id)
+                # If persisting now, require 1 credit; if deferring, only check that user has at least 1 (soft check)
+                # Final deduction will happen in commit endpoint.
                 if not u or (u.credits or 0) <= 0:
                     return jsonify({"error": "insufficient_credits"}), 402
 
@@ -293,53 +478,97 @@ def ai_generate_seed():
 
             completion = client.responses.parse(
                 # model="gpt-4o-2024-08-06",
-                model="gpt-5-nano",
+                model="gpt-4.1-nano-2025-04-14",
                 input=[
                     {"role": "system", "content": PROMPT_SYSTEM_SEED},
-                    {"role": "user", "content": PROMPT_USER1 + enriched_topic}
+                    {"role": "user", "content": PROMPT_USER1 + enriched_topic},
+                    {"role": "user", "content": PROMPT_USER2 + language}
                 ],
                 text_format=Chapter,
             )
             response = completion.output_parsed
             response_dict = response.model_dump()
+            # Derive a minimal bible from seed output and inputs
+            try:
+                bible = {
+                    "style": {
+                        "language": language or None,
+                        "tone": "kid-friendly, positive, vivid",
+                    },
+                    "characters": [
+                        {"id": c.get("id"), "name": (c.get("name") or None)} for c in (characters or []) if isinstance(c, dict)
+                    ],
+                    "constraints": [
+                        "Do not change character names, age, outfit, or hair color",
+                        "Keep continuity of places and items introduced earlier"
+                    ],
+                }
+                response_dict["bible_json"] = bible
+            except Exception:
+                pass
 
-            # Persist first chapter and decrement credits
-            with SessionLocal() as session:
-                # Create story
-                story = Story(user_id=user_id, title=((topic[:60] or "Untitled")), status="in_progress")
-                session.add(story); session.flush()
-                # Add chapter 1
-                ch = DBChapter(
-                    story_id=story.id,
-                    index_in_story=1,
-                    title=f"{topic[:40]}",
-                    text=response_dict.get('text') or '',
-                    image_url=None
-                )
-                session.add(ch)
-                # Initialize cover and character references on story
-                story.cover_image_url = None
-                try:
-                    if character_ids:
+            if not persist:
+                # Do not persist; client will call commit endpoint. Return only generated content.
+                return jsonify(response_dict)
+            else:
+                # Persist first chapter and decrement credits immediately
+                with SessionLocal() as session:
+                    # Create story using the title_story from LLM response
+                    story_title = response_dict.get('title_story') or topic[:40] or "Untitled"
+                    if len(story_title) > 40:
+                        story_title = story_title[:40]
+                    story = Story(user_id=user_id, title=story_title, status="in_progress", language=language if language else None)
+                    session.add(story); session.flush()
+                    # Add chapter 1
+                    chapter_title = response_dict.get('title_chapter') or f"{topic[:40]}"
+                    if len(chapter_title) > 40:
+                        chapter_title = chapter_title[:40]
+                    ch = DBChapter(
+                        story_id=story.id,
+                        index_in_story=1,
+                        title=chapter_title,
+                        text=response_dict.get('text') or '',
+                        image_url=None,
+                        audio_url=None,
+                        user_prompt=topic,
+                        is_final=False
+                    )
+                    session.add(ch)
+                    session.flush()  # chapter ID
+                    
+                    # Initialize cover/characters
+                    story.cover_image_url = None
+                    try:
                         import json
-                        # Keep only ints
-                        ids = []
-                        for cid in character_ids:
+                        if character_ids:
+                            ids = []
+                            for cid in character_ids:
+                                try:
+                                    ids.append(int(cid))
+                                except Exception:
+                                    continue
+                            if ids:
+                                story.character_ids_json = json.dumps(ids)
+                        if isinstance(character_images, list) and character_images:
+                            images_clean = [i for i in character_images if isinstance(i, str)]
+                            if images_clean:
+                                story.character_images_json = json.dumps(images_clean)
+                        # Persist bible_json if present
+                        bj = response_dict.get("bible_json")
+                        if bj:
                             try:
-                                ids.append(int(cid))
+                                story.bible_json = json.dumps(bj)
                             except Exception:
-                                continue
-                        if ids:
-                            story.character_ids_json = json.dumps(ids)
-                except Exception:
-                    pass
-                # decrement credits
-                u = session.get(User, user_id)
-                u.credits = max(0, (u.credits or 0) - 1)
-                session.commit()
-                response_dict.update({"story_id": story.id, "chapter_id": ch.id})
+                                pass
+                    except Exception:
+                        pass
+                    # decrement credits (text)
+                    u = session.get(User, user_id)
+                    u.credits = max(0, (u.credits or 0) - 1)
+                    session.commit()
+                    response_dict.update({"story_id": story.id, "chapter_id": ch.id})
 
-            return jsonify(response_dict)
+                return jsonify(response_dict)
         except Exception as e:
             print(f"Failed to generate story: {e}")
             return jsonify({"error": "chapter_generation_failed", "detail": str(e)}), 500
@@ -358,6 +587,12 @@ def ai_generate_chapter():
         history = []
     mode = (body.get("mode") or "continue").lower()
     story_id_from_client = body.get("story_id")
+    # Allow deferred persistence
+    persist = True
+    try:
+        persist = bool(body.get("persist", True))
+    except Exception:
+        persist = True
     
     if topic:
         try:
@@ -367,11 +602,40 @@ def ai_generate_chapter():
                 return jsonify({"error": "unauthorized"}), 401
             with SessionLocal() as session:
                 u = session.get(User, user_id)
+                # If persisting now, require a credit; if deferring, only soft-check >0
                 if not u or (u.credits or 0) <= 0:
                     return jsonify({"error": "insufficient_credits"}), 402
 
-            # Build context message with previous chapters
+            # Get story language for prompt generation
+            story_language = None
+            with SessionLocal() as session:
+                story = None
+                if story_id_from_client:
+                    story = session.get(Story, int(story_id_from_client))
+                if story is None:
+                    # Fallback to latest story
+                    story = (
+                        session.query(Story)
+                        .filter(Story.user_id == user_id)
+                        .order_by(Story.id.desc())
+                        .first()
+                    )
+                if story:
+                    story_language = story.language
+
+            # Build context message with previous chapters and bible
             previous_text = "\n\n".join([f"Chapter {i+1}: {t}" for i, t in enumerate(history) if isinstance(t, str) and t.strip()])
+            bible_text = None
+            try:
+                with SessionLocal() as s2:
+                    st = None
+                    if story_id_from_client:
+                        st = s2.get(Story, int(story_id_from_client))
+                    if st and getattr(st, 'bible_json', None):
+                        import json
+                        bible_text = st.bible_json
+            except Exception:
+                bible_text = None
             
             # Choose prompt based on requested mode
             if mode == "final":
@@ -381,10 +645,17 @@ def ai_generate_chapter():
             messages = [
                 {"role": "system", "content": system_prompt},
             ]
+            if bible_text:
+                messages.append({"role": "user", "content": f"Story bible (authoritative context, do not contradict):\n{bible_text}"})
             if previous_text:
                 messages.append({"role": "user", "content": f"Previous chapters so far:\n{previous_text}"})
-            messages.append({"role": "user", "content": f"Continue the story. Next chapter idea: {topic}"})
-
+            
+            # Build user message with language instruction if available
+            user_message = f"Continue the story. Next chapter idea: {topic}"
+            if story_language:
+                user_message += f"\n\n{PROMPT_USER2} {story_language}"
+            messages.append({"role": "user", "content": user_message})
+            
             completion = client.responses.parse(
                 model="gpt-4.1-nano-2025-04-14",
                 #model="gpt-5-nano",
@@ -393,6 +664,10 @@ def ai_generate_chapter():
             )
             response = completion.output_parsed
             response_dict = response.model_dump()
+
+            # If not persisting, return generated content immediately
+            if not persist:
+                return jsonify(response_dict)
 
             # Persist or update DB
             with SessionLocal() as session:
@@ -410,18 +685,30 @@ def ai_generate_chapter():
                 if not story:
                     story = Story(user_id=user_id, title=((topic[:60] or "Untitled")), status="in_progress")
                     session.add(story); session.flush()
+                
+                # Use the language we already retrieved for audio generation
                 # Next chapter index
                 next_idx = (session.query(DBChapter)
                              .filter(DBChapter.story_id == story.id)
                              .count()) + 1
+                chapter_title = response_dict.get('title_chapter') or f"{topic[:40]}"
+                if len(chapter_title) > 40:
+                    chapter_title = chapter_title[:40]
                 ch = DBChapter(
                     story_id=story.id,
                     index_in_story=next_idx,
-                    title=f"{topic[:40]}",
+                    title=chapter_title,
                     text=response_dict.get('text') or '',
-                    image_url=None
+                    image_url=None,
+                    audio_url=None,
+                    user_prompt=topic,  # Store the original user prompt
+                    is_final=(mode == "final")  # Set to true if this is the final chapter
                 )
                 session.add(ch)
+                session.flush()  # Flush to get the chapter ID
+                
+                # Skip audio generation here; handled on-demand via /api/chapters/<id>/audio/generate
+                
                 # If final mode, mark story as finished
                 if mode == "final":
                     story.status = "finished"
@@ -438,7 +725,152 @@ def ai_generate_chapter():
     else:
         return jsonify({'error': 'No topic provided'}), 400
 
+@app.post("/ai/edit-chapter")
+@require_auth
+def ai_edit_chapter():
+    """Edit an existing chapter by regenerating it with a new user prompt"""
+    body = request.json or {}
+    chapter_id = body.get("chapter_id")
+    new_prompt = body.get("prompt") or ""
+    
+    print(f"Edit chapter request - chapter_id: {chapter_id}, prompt: '{new_prompt}'")
+    
+    if not chapter_id or not new_prompt.strip():
+        return jsonify({"error": "chapter_id and prompt are required", "received": {"chapter_id": chapter_id, "prompt": new_prompt}}), 400
+    
+    try:
+        # Check credits BEFORE invoking LLM
+        user_id = getattr(g, 'user_id', None)
+        if not user_id:
+            return jsonify({"error": "unauthorized"}), 401
+        
+        with SessionLocal() as session:
+            u = session.get(User, user_id)
+            if not u or (u.credits or 0) <= 0:
+                return jsonify({"error": "insufficient_credits"}), 402
+            
+            # Get the chapter and verify ownership
+            chapter = session.get(DBChapter, int(chapter_id))
+            if not chapter:
+                return jsonify({"error": "chapter_not_found"}), 404
+            
+            story = session.get(Story, chapter.story_id)
+            if not story or story.user_id != user_id:
+                return jsonify({"error": "unauthorized"}), 403
+            
+            # Get story language for prompt generation
+            story_language = story.language
+            
+            # Get previous chapters for context (excluding current chapter)
+            previous_chapters = (
+                session.query(DBChapter)
+                .filter(DBChapter.story_id == story.id)
+                .filter(DBChapter.index_in_story < chapter.index_in_story)
+                .order_by(DBChapter.index_in_story.asc())
+                .all()
+            )
+            
+            # Build context message with previous chapters
+            previous_text = "\n\n".join([f"Chapter {ch.index_in_story}: {ch.text}" for ch in previous_chapters if ch.text.strip()])
+            
+            # Choose prompt strategy: if first chapter, use SEED flow to respect story initiation
+            is_final = chapter.is_final
+            is_first = (chapter.index_in_story == 1)
 
+            if is_first:
+                # Enrich prompt with character names if available on the story
+                enriched_prompt = new_prompt
+                try:
+                    import json
+                    character_names: list[str] = []
+                    ids: list[int] = []
+                    if getattr(story, 'character_ids_json', None):
+                        parsed_ids = json.loads(story.character_ids_json)
+                        if isinstance(parsed_ids, list):
+                            for cid in parsed_ids:
+                                try:
+                                    ids.append(int(cid))
+                                except Exception:
+                                    continue
+                    if ids:
+                        rows = (
+                            session.query(CharacterImage.name)
+                            .filter(CharacterImage.user_id == user_id)
+                            .filter(CharacterImage.id.in_(ids))
+                            .all()
+                        )
+                        character_names = [r[0] for r in rows if (r[0] or '').strip()]
+                    if character_names:
+                        try:
+                            enriched_prompt = f"{new_prompt}. Characters: {', '.join(character_names)}."
+                        except Exception:
+                            enriched_prompt = new_prompt
+                except Exception:
+                    enriched_prompt = new_prompt
+
+                messages = [
+                    {"role": "system", "content": PROMPT_SYSTEM_SEED},
+                    {"role": "user", "content": PROMPT_USER1 + enriched_prompt},
+                    {"role": "user", "content": PROMPT_USER2 + (story_language or "")},
+                ]
+            else:
+                # Regular chapter edit flow
+                system_prompt = PROMPT_SYSTEM_CHAPTER_FINAL if is_final else PROMPT_SYSTEM_CHAPTER
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                ]
+                if previous_text:
+                    messages.append({"role": "user", "content": f"Previous chapters so far:\n{previous_text}"})
+                # Build user message with language instruction if available
+                user_message = f"Continue the story. Next chapter idea: {new_prompt}"
+                if story_language:
+                    user_message += f"\n\n{PROMPT_USER2} {story_language}"
+                messages.append({"role": "user", "content": user_message})
+
+            completion = client.responses.parse(
+                model="gpt-4.1-nano-2025-04-14",
+                input=messages,
+                text_format=Chapter,
+            )
+            response = completion.output_parsed
+            response_dict = response.model_dump()
+
+            # Update the existing chapter
+            chapter.title = response_dict.get('title_chapter') or chapter.title
+            chapter.text = response_dict.get('text') or chapter.text
+            chapter.user_prompt = new_prompt  # Update the user prompt
+            chapter.image_url = None  # Reset image to be regenerated
+            chapter.audio_url = None  # Reset audio to be regenerated
+            # If we used SEED for chapter 1, optionally refresh bible_json on the story
+            if is_first:
+                try:
+                    # Derive a minimal bible from seed output and context
+                    bj = {
+                        "style": {
+                            "language": story_language or None,
+                            "tone": "kid-friendly, positive, vivid",
+                        }
+                    }
+                    import json
+                    story.bible_json = json.dumps(bj)
+                except Exception:
+                    pass
+            
+            # Skip audio regeneration; will be generated on-demand when playing
+            
+            # Decrement credits
+            u.credits = max(0, (u.credits or 0) - 2)
+            session.commit()
+            
+            response_dict.update({
+                "chapter_id": chapter.id,
+                "user_prompt": new_prompt
+            })
+
+        return jsonify(response_dict)
+    except Exception as e:
+        print(f"Failed to edit chapter: {e}")
+        return jsonify({"error": "chapter_edit_failed", "detail": str(e)}), 500
 
 # ---- AI Image Generation Endpoint ----
 @app.post("/ai/generate-image")
@@ -453,16 +885,38 @@ def ai_generate_image():
     prompt = body.get("prompt") or (
         "a brave young fox in a moonlit enchanted forest, soft lighting, warm colors, friendly mood, storybook style."
     )
+    mode = (body.get("mode") or "").strip().lower()
+    # Enforce white background for character refinements
+    if mode == "character_refine" and "white background" not in (prompt or "").lower():
+        prompt = f"{prompt} Use a white background."
+    # Always encourage reference usage
     prompt = f"{prompt}. Use the provided reference images of the characters to ensure consistency."
     print(f"prompt: {prompt}")
     story_id_from_client = body.get("story_id")
     chapter_id_from_client = body.get("chapter_id")
+    # Control persistence: allow returning image without DB writes when persist=false (e.g., deferred commit)
+    persist = True
+    try:
+        # Credit check for regenerate/character_refine mode
+        if mode in ("regenerate", "character_refine"):
+            user_id = getattr(g, 'user_id', None)
+            if not user_id:
+                return jsonify({"error": "unauthorized"}), 401
+            with SessionLocal() as session:
+                u = session.get(User, user_id)
+                if not u or (u.credits or 0) <= 0:
+                    return jsonify({"error": "insufficient_credits"}), 402
+        persist = bool(body.get("persist", True))
+    except Exception:
+        persist = True
     images_from_client = body.get("images") or []
     print(f"images_from_client: {images_from_client}")
+   
     if not isinstance(images_from_client, list):
         images_from_client = []
     # New: allow providing character_ids, or fallback to story.character_ids_json
     character_ids = body.get("character_ids") or []
+    
     if not isinstance(character_ids, list):
         character_ids = []
 
@@ -522,23 +976,48 @@ def ai_generate_image():
         client = genai.Client(api_key=api_key)
         model = "gemini-2.5-flash-image-preview"
 
-        # Helper: decode data URL -> (mime, bytes)
-        def decode_data_url(data_url: str):
+        # Helper: accept either data URL (base64) or http(s) URL -> (mime, bytes)
+        def decode_image_ref(ref: str):
             try:
-                if data_url.startswith("data:") and ";base64," in data_url:
-                    header, b64 = data_url.split(",", 1)
-                    mime = header.split(":", 1)[1].split(";", 1)[0]
-                    return mime, base64.b64decode(b64)
+                #logging.debug(f"decode_image_ref: ref={ref}")
+                if isinstance(ref, str):
+                    # Data URL path
+                    if ref.startswith("data:") and ";base64," in ref:
+                        header, b64 = ref.split(",", 1)
+                        mime = header.split(":", 1)[1].split(";", 1)[0]
+                        return mime, base64.b64decode(b64)
+                    # Blob/Azure URL via SDK (avoids 403, supports private containers)
+                    if ref.startswith("http://") or ref.startswith("https://"):
+                        try:
+                            blob_bytes, blob_mime = download_blob_bytes_from_url(ref)
+                            if blob_bytes:
+                                return blob_mime or "image/png", blob_bytes
+                        except Exception:
+                            pass
+                        # Fallback to HTTP GET with browser-like headers
+                        try:
+                            public_ref = make_public_url(ref)
+                            r = requests.get(public_ref, timeout=12, headers={
+                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+                                "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                                "Accept-Language": "en-US,en;q=0.9"
+                            })
+                            if r.status_code == 200 and r.content:
+                                mime = r.headers.get("Content-Type") or mimetypes.guess_type(public_ref)[0] or "image/png"
+                                return mime, r.content
+                        except Exception:
+                            return None, None
             except Exception:
                 pass
             return None, None
-
+        #print(f"generate-image, antes de build user parts -- images_from_client: {images_from_client}")
         # Build user parts: text + optional inline images from client
         user_parts = [genai_types.Part.from_text(text=prompt)]
         for img in images_from_client[:3]:
             if isinstance(img, str):
-                mime, blob = decode_data_url(img)
+                mime, blob = decode_image_ref(img)
                 if blob:
+                    
                     try:
                         # Prefer explicit inline data part constructor if available
                         if hasattr(genai_types.Part, "from_inline_data"):
@@ -547,7 +1026,6 @@ def ai_generate_image():
                             user_parts.append(genai_types.Part.from_bytes(data=blob, mime_type=mime or "image/png"))
                     except Exception:
                         continue
-
         contents = [genai_types.Content(role="user", parts=user_parts)]
         generate_content_config = genai_types.GenerateContentConfig(
             response_modalities=["IMAGE"],
@@ -572,72 +1050,250 @@ def ai_generate_image():
                 continue
 
         if not image_data:
-            # If client provided an image, prefer that
+            # If client provided an image, prefer that (upload to blob for consistency)
             try:
                 first_img = None
                 if images_from_client:
                     first_img = images_from_client[0] if isinstance(images_from_client[0], str) else None
                 if first_img:
-                    return jsonify({"imageUrl": first_img}), 200
+                    # Accept URL or data URL for fallback upload
+                    mime0, blob0 = decode_image_ref(first_img)
+                    if blob0:
+                        orig_url_raw, thumb_url_raw = upload_image_and_thumbnail(blob0, mime0 or "image/png", prefix=f"users/{getattr(g, 'user_id', 'anon')}/stories")
+                        return jsonify({
+                            "imageUrl": sign_blob_url(orig_url_raw),
+                            "thumbnailUrl": sign_blob_url(thumb_url_raw)
+                        }), 200
             except Exception:
                 pass
             # Fallback: return text response only
             return jsonify({"text": "".join(text_parts)}), 200
 
-        # Return as data URL for simplest frontend display and persist image URL to chapter if possible
-        base64_data = base64.b64encode(image_data).decode("utf-8")
-        data_url = f"data:{image_mime};base64,{base64_data}"
-
-        # Optionally update the specified chapter image_url, or fallback to most recent
+        # Upload original and thumbnail to Azure Blob Storage
         try:
-            with SessionLocal() as session:
-                ch = None
-                if chapter_id_from_client:
-                    ch = session.get(DBChapter, int(chapter_id_from_client))
-                if ch is None:
-                    # Fallback: latest chapter of latest story for this user
-                    user_id = getattr(g, 'user_id', None)
-                    story = None
-                    if story_id_from_client:
-                        story = session.get(Story, int(story_id_from_client))
-                    if story is None:
-                        story = (
-                            session.query(Story)
-                            .filter(Story.user_id == user_id)
-                            .order_by(Story.id.desc())
-                            .first()
-                        )
-                    if story:
-                        ch = (
-                            session.query(DBChapter)
-                            .filter(DBChapter.story_id == story.id)
-                            .order_by(DBChapter.index_in_story.desc())
-                            .first()
-                        )
-                # At this point, ch may be resolved via direct id or fallback
-                if ch is not None:
-                    ch.image_url = data_url
-                    # Update story cover image to latest
-                    try:
-                        story = session.get(Story, ch.story_id)
-                        if story is not None:
-                            story.cover_image_url = data_url
-                            # If provided images were sent now and not yet stored, persist on story
-                            try:
-                                if images_from_client and not getattr(story, 'character_images_json', None):
-                                    import json
-                                    story.character_images_json = json.dumps([i for i in images_from_client if isinstance(i, str)])
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-                    session.commit()
+            user_id = getattr(g, 'user_id', None)
+            orig_url_raw, thumb_url_raw = upload_image_and_thumbnail(image_data, image_mime or "image/png", prefix=f"users/{user_id}/stories")
+            # Sign for immediate client usage, but persist raw URLs in DB
+            orig_url_signed = sign_blob_url(orig_url_raw)
+            thumb_url_signed = sign_blob_url(thumb_url_raw)
         except Exception as e:
-            print(f"Failed to persist image_url to DB: {e}")
+            return jsonify({"error": f"upload_failed: {str(e)}"}), 500
 
-        return jsonify({"imageUrl": data_url}), 200
+        # Optionally update DB unless persisting is deferred
+        if persist:
+            try:
+                with SessionLocal() as session:
+                    ch = None
+                    if chapter_id_from_client:
+                        ch = session.get(DBChapter, int(chapter_id_from_client))
+                    if ch is None:
+                        user_id = getattr(g, 'user_id', None)
+                        story = None
+                        if story_id_from_client:
+                            story = session.get(Story, int(story_id_from_client))
+                        if story is None:
+                            story = (
+                                session.query(Story)
+                                .filter(Story.user_id == user_id)
+                                .order_by(Story.id.desc())
+                                .first()
+                            )
+                        if story:
+                            ch = (
+                                session.query(DBChapter)
+                                .filter(DBChapter.story_id == story.id)
+                                .order_by(DBChapter.index_in_story.desc())
+                                .first()
+                            )
+                    if ch is not None:
+                        # Persist raw URL without SAS; responses will sign on demand
+                        ch.image_url = orig_url_raw
+                        try:
+                            story = session.get(Story, ch.story_id)
+                            if story is not None:
+                                story.cover_image_url = thumb_url_raw
+                                try:
+                                    if images_from_client and not getattr(story, 'character_images_json', None):
+                                        import json
+                                        story.character_images_json = json.dumps([i for i in images_from_client if isinstance(i, str)])
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        session.commit()
+            except Exception as e:
+                print(f"Failed to persist image_url to DB: {e}")
+
+        # Deduct 1 credit on explicit regenerate or character_refine modes only
+        if mode in ("regenerate", "character_refine"):
+            try:
+                with SessionLocal() as session:
+                    u = session.get(User, getattr(g, 'user_id', None))
+                    if u:
+                        u.credits = max(0, (u.credits or 0) - 1)
+                        session.commit()
+            except Exception:
+                pass
+
+        return jsonify({"imageUrl": orig_url_signed, "thumbnailUrl": thumb_url_signed}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ---- Commit chapter: persist text+image for a subsequent chapter ----
+@app.post("/ai/commit-chapter")
+@require_auth
+def ai_commit_chapter():
+    body = request.json or {}
+    user_id = getattr(g, 'user_id', None)
+    if not user_id:
+        return jsonify({"error": "unauthorized"}), 401
+
+    story_id = body.get("story_id")
+    if not story_id:
+        return jsonify({"error": "story_id_required"}), 400
+
+    text = body.get("text") or ""
+    title_chapter = (body.get("title_chapter") or "")[0:40]
+    prompt = body.get("prompt") or ""
+    is_final = bool(body.get("is_final", False))
+    image_url = body.get("image_url") or None
+    thumbnail_url = body.get("thumbnail_url") or None
+    # Strip any existing SAS from incoming URLs to persist raw
+    if isinstance(image_url, str):
+        image_url = image_url.split('?', 1)[0]
+    if isinstance(thumbnail_url, str):
+        thumbnail_url = thumbnail_url.split('?', 1)[0]
+
+    try:
+        with SessionLocal() as session:
+            story = session.get(Story, int(story_id))
+            if not story or story.user_id != user_id:
+                return jsonify({"error": "not_found"}), 404
+
+            u = session.get(User, user_id)
+            required = 2 if image_url else 1
+            if not u or (u.credits or 0) < required:
+                return jsonify({"error": "insufficient_credits"}), 402
+
+            # Next chapter index
+            next_idx = (session.query(DBChapter)
+                         .filter(DBChapter.story_id == story.id)
+                         .count()) + 1
+
+            ch = DBChapter(
+                story_id=story.id,
+                index_in_story=next_idx,
+                title=title_chapter or (prompt[:40] if prompt else f"Chapter {next_idx}"),
+                text=text,
+                image_url=image_url,
+                audio_url=None,
+                user_prompt=prompt,
+                is_final=is_final
+            )
+            session.add(ch); session.flush()
+
+            if thumbnail_url:
+                story.cover_image_url = thumbnail_url
+            if is_final:
+                story.status = "finished"
+
+            # Skip audio generation here; handled on-demand in ebook viewer
+
+            # Deduct credits
+            u.credits = max(0, (u.credits or 0) - required)
+            session.commit()
+
+            return jsonify({
+                "chapter_id": ch.id
+            }), 200
+    except Exception as e:
+        return jsonify({"error": "commit_chapter_failed", "detail": str(e)}), 500
+
+# ---- Commit seed: persist text+image and deduct credits in one go ----
+@app.post("/ai/commit-seed")
+@require_auth
+def ai_commit_seed():
+    body = request.json or {}
+    user_id = getattr(g, 'user_id', None)
+    if not user_id:
+        return jsonify({"error": "unauthorized"}), 401
+
+    text = body.get("text") or ""
+    title_story = (body.get("title_story") or (body.get("prompt") or "Untitled"))[:40]
+    title_chapter = (body.get("title_chapter") or (body.get("prompt") or "Chapter 1"))[:40]
+    language = body.get("language") or None
+    prompt = body.get("prompt") or ""
+    image_url = body.get("image_url") or None
+    thumbnail_url = body.get("thumbnail_url") or None
+    # Strip any existing SAS from incoming URLs to persist raw
+    if isinstance(image_url, str):
+        image_url = image_url.split('?', 1)[0]
+    if isinstance(thumbnail_url, str):
+        thumbnail_url = thumbnail_url.split('?', 1)[0]
+    character_ids = body.get("character_ids") or []
+    character_images = body.get("character_images") or []
+    bible_json = body.get("bible_json") or None
+
+    try:
+        with SessionLocal() as session:
+            u = session.get(User, user_id)
+            required = 2 if image_url else 1
+            if not u or (u.credits or 0) < required:
+                return jsonify({"error": "insufficient_credits"}), 402
+
+            # Create story and chapter
+            story = Story(user_id=user_id, title=title_story, status="in_progress", language=language)
+            session.add(story); session.flush()
+
+            ch = DBChapter(
+                story_id=story.id,
+                index_in_story=1,
+                title=title_chapter,
+                text=text,
+                image_url=image_url,
+                audio_url=None,
+                user_prompt=prompt,
+                is_final=False
+            )
+            session.add(ch); session.flush()
+
+            # Persist character metadata and cover
+            try:
+                import json
+                ids = []
+                for cid in (character_ids or []):
+                    try:
+                        ids.append(int(cid))
+                    except Exception:
+                        continue
+                if ids:
+                    story.character_ids_json = json.dumps(ids)
+                imgs = [i for i in (character_images or []) if isinstance(i, str)]
+                if imgs:
+                    story.character_images_json = json.dumps(imgs)
+                if thumbnail_url:
+                    story.cover_image_url = thumbnail_url
+                if bible_json:
+                    try:
+                        story.bible_json = json.dumps(bible_json) if not isinstance(bible_json, str) else bible_json
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # Skip audio generation here; handled on-demand in ebook viewer
+
+            # Deduct credits
+            u.credits = max(0, (u.credits or 0) - required)
+            session.commit()
+
+            return jsonify({
+                "story_id": story.id,
+                "chapter_id": ch.id,
+                "cover_image_url": getattr(story, 'cover_image_url', None)
+            }), 200
+    except Exception as e:
+        return jsonify({"error": "commit_failed", "detail": str(e)}), 500
 
 # ---- Character Image Generation (stateless) ----
 @app.post("/ai/generate-character")
@@ -651,7 +1307,6 @@ def ai_generate_character():
     """
     body = request.json or {}
     #prompt = body.get("prompt") or "Generate a friendly, kid-safe character image."
-    prompt = " Keep the character's identity and pose. Transform the uploaded portrait into a kid-friendly character. Disney Pixar style."
     prompt = PROMPT_CREATE_CHARACTER
     image_data_url = body.get("image") or None
 
@@ -671,26 +1326,48 @@ def ai_generate_character():
     if genai is None:
         return jsonify({"error": "google_genai_not_installed"}), 500
 
-    # Helper: decode data URL -> (mime, bytes)
-    def decode_data_url(data_url: str):
+    # Helper: accept either data URL (base64) or http(s) URL -> (mime, bytes)
+    def decode_image_ref(ref: str):
         try:
-            if data_url and data_url.startswith("data:") and ";base64," in data_url:
-                header, b64 = data_url.split(",", 1)
-                mime = header.split(":", 1)[1].split(";", 1)[0]
-                return mime, base64.b64decode(b64)
+            if ref and isinstance(ref, str):
+                if ref.startswith("data:") and ";base64," in ref:
+                    header, b64 = ref.split(",", 1)
+                    mime = header.split(":", 1)[1].split(";", 1)[0]
+                    return mime, base64.b64decode(b64)
+                if ref.startswith("http://") or ref.startswith("https://"):
+                    try:
+                        blob_bytes, blob_mime = download_blob_bytes_from_url(ref)
+                        if blob_bytes:
+                            return blob_mime or "image/png", blob_bytes
+                    except Exception:
+                        pass
+                    try:
+                        public_ref = make_public_url(ref)
+                        r = requests.get(public_ref, timeout=12, headers={
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+                            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                            "Accept-Language": "en-US,en;q=0.9"
+                        })
+                        if r.status_code == 200 and r.content:
+                            mime = r.headers.get("Content-Type") or mimetypes.guess_type(public_ref)[0] or "image/png"
+                            return mime, r.content
+                    except Exception:
+                        return None, None
         except Exception:
             pass
         return None, None
 
     try:
-        mime, blob = decode_data_url(image_data_url) if image_data_url else (None, None)
+        mime, blob = decode_image_ref(image_data_url) if image_data_url else (None, None)
         if not blob:
             return jsonify({"error": "missing_image"}), 400
 
         client = genai.Client(api_key=api_key)
         model = "gemini-2.5-flash-image-preview"
 
-        parts = [genai_types.Part.from_text(text=prompt)]
+        # Enforce white background for character output
+        full_prompt = f"{prompt} Use a white background."
+        parts = [genai_types.Part.from_text(text=full_prompt)]
         if hasattr(genai_types.Part, "from_inline_data"):
             parts.append(genai_types.Part.from_inline_data(mime_type=mime or "image/png", data=blob))
         else:
@@ -839,13 +1516,78 @@ def save_character_image():
     if not image or not isinstance(image, str):
         return jsonify({"error": "missing_image"}), 400
     try:
+        # Accept either data URL or http(s) URL
+        mime, blob = parse_data_url(image)
+        if not blob:
+            # Try downloading from storage/URL
+            data, ctype = download_blob_bytes_from_url(image)
+            if not data:
+                # Fallback to public HTTP GET
+                try:
+                    public_ref = make_public_url(image)
+                    r = requests.get(public_ref, timeout=12)
+                    if r.status_code == 200 and r.content:
+                        data = r.content
+                        ctype = r.headers.get("Content-Type") or "image/png"
+                except Exception:
+                    pass
+            if not data:
+                return jsonify({"error": "invalid_image"}), 400
+            orig_url, thumb_url = upload_image_and_thumbnail(data, ctype or "image/png", prefix=f"users/{g.user_id}/characters", thumb_width=300)
+        else:
+            # Data URL path
+            orig_url, thumb_url = upload_image_and_thumbnail(blob, mime or "image/png", prefix=f"users/{g.user_id}/characters", thumb_width=300)
         with SessionLocal() as session:
-            rec = CharacterImage(user_id=g.user_id, image_data=image, name=name)
+            rec = CharacterImage(user_id=g.user_id, image_data=orig_url, name=name)
             session.add(rec)
             session.commit()
-            return jsonify({"id": rec.id, "image": rec.image_data, "name": rec.name}), 201
+            return jsonify({"id": rec.id, "image": orig_url, "name": rec.name}), 201
     except Exception as e:
         return jsonify({"error": "save_failed", "detail": str(e)}), 500
+
+@app.patch("/characters/<int:character_id>")
+@require_auth
+def update_character(character_id: int):
+    body = request.get_json(silent=True) or {}
+    name = body.get("name")
+    image = body.get("image")  # optional
+    try:
+        with SessionLocal() as session:
+            character = session.query(CharacterImage).filter(
+                CharacterImage.id == character_id,
+                CharacterImage.user_id == g.user_id
+            ).first()
+            if not character:
+                return jsonify({"error": "character_not_found"}), 404
+
+            if isinstance(name, str):
+                character.name = name.strip() or None
+
+            if isinstance(image, str) and image.strip():
+                # Accept data URL or URL
+                mime, blob = parse_data_url(image)
+                if not blob:
+                    data, ctype = download_blob_bytes_from_url(image)
+                    if not data:
+                        try:
+                            public_ref = make_public_url(image)
+                            r = requests.get(public_ref, timeout=12)
+                            if r.status_code == 200 and r.content:
+                                data = r.content
+                                ctype = r.headers.get("Content-Type") or "image/png"
+                        except Exception:
+                            pass
+                    if data:
+                        url, _thumb = upload_image_and_thumbnail(data, ctype or "image/png", prefix=f"users/{g.user_id}/characters", thumb_width=300)
+                        character.image_data = url
+                else:
+                    url, _thumb = upload_image_and_thumbnail(blob, mime or "image/png", prefix=f"users/{g.user_id}/characters", thumb_width=300)
+                    character.image_data = url
+
+            session.commit()
+            return jsonify({"id": character.id, "image": character.image_data, "name": character.name}), 200
+    except Exception as e:
+        return jsonify({"error": "update_failed", "detail": str(e)}), 500
 
 # Delete character image
 @app.delete("/characters/<int:character_id>")
@@ -887,7 +1629,7 @@ def list_stories():
                 "status": s.status,
                 "created_at": s.created_at.isoformat() if s.created_at else None,
                 "chapters_count": count,
-                "cover_image_url": getattr(s, "cover_image_url", None),
+                "cover_image_url": sign_blob_url(getattr(s, "cover_image_url", None)) if getattr(s, "cover_image_url", None) else None,
             })
         return jsonify(result)
 
@@ -910,7 +1652,10 @@ def list_story_chapters(story_id: int):
                 "index": ch.index_in_story,
                 "title": ch.title,
                 "text": ch.text,
-                "image_url": ch.image_url,
+                "image_url": sign_blob_url(ch.image_url) if ch.image_url else None,
+                "audio_url": sign_blob_url(ch.audio_url) if ch.audio_url else None,
+                "user_prompt": ch.user_prompt,
+                "is_final": ch.is_final,
             }
             for ch in chapters
         ])
@@ -929,7 +1674,35 @@ def get_story(story_id: int):
             "status": story.status,
             "chapters_count": count,
             "created_at": story.created_at.isoformat() if story.created_at else None,
-            "cover_image_url": getattr(story, "cover_image_url", None),
+            "cover_image_url": sign_blob_url(getattr(story, "cover_image_url", None)) if getattr(story, "cover_image_url", None) else None,
+        })
+
+@app.get("/stories/<int:story_id>/public")
+def get_public_story(story_id: int):
+    """Get a story for public sharing (no authentication required)"""
+    with SessionLocal() as session:
+        story = session.get(Story, story_id)
+        if not story:
+            return jsonify({"error": "not_found"}), 404
+        
+        # Get all chapters for this story
+        chapters = session.query(DBChapter).filter(DBChapter.story_id == story_id).order_by(DBChapter.index_in_story).all()
+        
+        return jsonify({
+            "id": story.id,
+            "title": story.title,
+            "language": getattr(story, "language", None),
+            "chapters": [
+                {
+                    "id": ch.id,
+                    "title": ch.title,
+                    "text": ch.text,
+                    "imageUrl": sign_blob_url(ch.image_url) if ch.image_url else None,
+                    "audioUrl": sign_blob_url(ch.audio_url) if ch.audio_url else None,
+                    "index": ch.index_in_story
+                }
+                for ch in chapters
+            ]
         })
 
 @app.delete("/stories/<int:story_id>")
@@ -981,6 +1754,179 @@ def delete_account():
         session.delete(user)
         session.commit()
         return jsonify({"ok": True}), 200
+
+# ElevenLabs endpoint
+@app.route('/api/elevenlabs/speech', methods=['POST'])
+def generate_elevenlabs_speech():
+    """Generate speech using ElevenLabs with environment variables"""
+    try:
+        data = request.get_json()
+        text = data.get('text')
+        
+        if not text:
+            return jsonify({"error": "Text is required"}), 400
+        
+        # Get API key and voice ID from environment variables
+        api_key = os.getenv('ELEVENLABS_API_KEY')
+        voice_id = os.getenv('ELEVENLABS_VOICE_ID')
+        
+        if not api_key or not voice_id:
+            return jsonify({
+                "error": "ElevenLabs configuration not found. Please set ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID environment variables."
+            }), 500
+        
+        headers = {
+            'Accept': 'audio/mpeg',
+            'Content-Type': 'application/json',
+            'xi-api-key': api_key
+        }
+        
+        body = {
+            'text': text,
+            'model_id': 'eleven_multilingual_v2',
+            'voice_settings': {
+                'stability': 0.5,
+                'similarity_boost': 0.5,
+                'style': 0.0,
+                'use_speaker_boost': True
+            }
+        }
+        
+        response = requests.post(f'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}', 
+                               headers=headers, json=body)
+        
+        if response.status_code == 200:
+            # Upload to blob and return URL
+            try:
+                url = upload_bytes(response.content, "audio/mpeg", prefix=f"users/{'anon'}/audio", extension="mp3")
+                return jsonify({"audioUrl": url}), 200
+            except Exception as e:
+                return jsonify({"error": f"upload_failed: {str(e)}"}), 500
+        else:
+            return jsonify({"error": "Failed to generate speech", "status": response.status_code}), 400
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ---- Get Chapter Audio Endpoint ----
+@app.get("/api/chapters/<int:chapter_id>/audio")
+@require_auth
+def get_chapter_audio(chapter_id):
+    """Get audio URL for a specific chapter"""
+    try:
+        with SessionLocal() as session:
+            chapter = session.get(DBChapter, chapter_id)
+            if not chapter:
+                return jsonify({"error": "Chapter not found"}), 404
+            
+            # Check if user owns this chapter's story
+            story = session.get(Story, chapter.story_id)
+            if not story or story.user_id != g.user_id:
+                return jsonify({"error": "Unauthorized"}), 403
+            
+            return jsonify({
+                "chapter_id": chapter_id,
+                "audio_url": chapter.audio_url,
+                "has_audio": bool(chapter.audio_url)
+            }), 200
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ---- Generate Chapter Audio On-Demand ----
+@app.post("/api/chapters/<int:chapter_id>/audio/generate")
+@require_auth
+def generate_chapter_audio_on_demand(chapter_id: int):
+    """Generate audio for a chapter only when requested (lazy). If audio exists, return it.
+
+    Returns: { chapter_id, audio_url }
+    """
+    try:
+        with SessionLocal() as session:
+            chapter = session.get(DBChapter, chapter_id)
+            if not chapter:
+                return jsonify({"error": "chapter_not_found"}), 404
+
+            story = session.get(Story, chapter.story_id)
+            if not story or story.user_id != g.user_id:
+                return jsonify({"error": "unauthorized"}), 403
+
+            # If already present, return immediately
+            if chapter.audio_url:
+                return jsonify({"chapter_id": chapter_id, "audio_url": chapter.audio_url}), 200
+
+            # Guard: audio disabled
+            if not AUDIO_ENABLED:
+                return jsonify({"error": "audio_disabled"}), 400
+
+            # Check credits BEFORE generating
+            u = session.get(User, g.user_id)
+            if not u or (u.credits or 0) <= 0:
+                return jsonify({"error": "insufficient_credits"}), 402
+
+            # Generate synchronously; front-end can show spinner
+            text = chapter.text or ""
+            if not text.strip():
+                return jsonify({"error": "empty_text"}), 400
+
+            audio_url = generate_audio_elevenlabs(text, story.language, g.user_id)
+            if audio_url:
+                chapter.audio_url = audio_url
+                # Deduct one credit per audio successfully generated
+                u.credits = max(0, (u.credits or 0) - 1)
+                session.commit()
+                return jsonify({"chapter_id": chapter_id, "audio_url": audio_url}), 200
+
+            return jsonify({"error": "audio_generation_failed"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ---- Generate Audio in Bulk for a Story ----
+@app.post("/api/stories/<int:story_id>/audio/generate-all")
+@require_auth
+def generate_audio_for_story(story_id: int):
+    """Generate audio for all chapters that don't have it yet.
+
+    Deducts 1 credit per successfully generated chapter.
+    Returns a list of {chapter_id, audio_url} generated.
+    """
+    if not AUDIO_ENABLED:
+        return jsonify({"error": "audio_disabled"}), 400
+    try:
+        out = []
+        with SessionLocal() as session:
+            story = session.get(Story, story_id)
+            if not story or story.user_id != g.user_id:
+                return jsonify({"error": "not_found"}), 404
+
+            u = session.get(User, g.user_id)
+            if not u or (u.credits or 0) <= 0:
+                return jsonify({"error": "insufficient_credits"}), 402
+
+            chapters = (
+                session.query(DBChapter)
+                .filter(DBChapter.story_id == story.id)
+                .order_by(DBChapter.index_in_story.asc())
+                .all()
+            )
+            for ch in chapters:
+                # Only generate for chapters missing audio
+                if ch.audio_url:
+                    continue
+                if (u.credits or 0) <= 0:
+                    break
+                text = (ch.text or "").strip()
+                if not text:
+                    continue
+                url = generate_audio_elevenlabs(text, story.language, g.user_id)
+                if url:
+                    ch.audio_url = url
+                    u.credits = max(0, (u.credits or 0) - 1)
+                    out.append({"chapter_id": ch.id, "audio_url": url})
+            session.commit()
+        return jsonify({"generated": out}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)

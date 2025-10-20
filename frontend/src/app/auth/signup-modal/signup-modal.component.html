@@ -33,24 +33,77 @@
             class="form-input"
             placeholder="Enter your email"
             [class.error]="form.controls.email.invalid && form.controls.email.touched"
+            autocomplete="email"
+            inputmode="email"
           />
-          <div class="error-message" *ngIf="form.controls.email.invalid && form.controls.email.touched">
+          <div class="error-message" *ngIf="form.controls.email.errors?.['required'] && form.controls.email.touched">
+            Email is required
+          </div>
+          <div class="error-message" *ngIf="form.controls.email.errors?.['email'] && form.controls.email.touched">
             Please enter a valid email address
+          </div>
+          <div class="error-message" *ngIf="form.controls.email.errors?.['whitespace'] && form.controls.email.touched">
+            Email cannot contain spaces
+          </div>
+          <div class="error-message" *ngIf="form.controls.email.errors?.['domainMissing'] && form.controls.email.touched">
+            Email must include a domain (e.g., user&#64;domain.com)
+          </div>
+          <div class="error-message" *ngIf="form.controls.email.errors?.['domainDotMissing'] && form.controls.email.touched">
+            Email domain must contain a dot (e.g., gmail.com)
+          </div>
+          <div class="error-message" *ngIf="form.controls.email.errors?.['domainTldShort'] && form.controls.email.touched">
+            Email TLD must be at least 2 characters (e.g., .com)
+          </div>
+          <div class="email-suggestion" *ngIf="emailSuggestion && form.controls.email.touched">
+            Did you mean <button type="button" class="suggestion-btn" (click)="acceptEmailSuggestion()">{{ emailSuggestion }}</button> ?
           </div>
         </div>
 
         <div class="form-group">
           <label for="password" class="form-label">Password</label>
-          <input 
-            id="password"
-            formControlName="password" 
-            type="password" 
-            class="form-input"
-            placeholder="Create a secure password"
-            [class.error]="form.controls.password.invalid && form.controls.password.touched"
-          />
-          <div class="error-message" *ngIf="form.controls.password.invalid && form.controls.password.touched">
+          <div class="password-input">
+            <input 
+              id="password"
+              formControlName="password" 
+              [type]="showPassword ? 'text' : 'password'"
+              class="form-input"
+              placeholder="Create a secure password"
+              [class.error]="form.controls.password.invalid && form.controls.password.touched"
+              autocomplete="new-password"
+            />
+            <button type="button" class="toggle-visibility" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'">
+              {{ showPassword ? '🙈' : '👁️' }}
+            </button>
+          </div>
+          <div class="error-message" *ngIf="form.controls.password.errors?.['required'] && form.controls.password.touched">
+            Password is required
+          </div>
+          <div class="error-message" *ngIf="form.controls.password.errors?.['minlength'] && form.controls.password.touched">
             Password must be at least 8 characters long
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="confirmPassword" class="form-label">Confirm Password</label>
+          <div class="password-input">
+            <input 
+              id="confirmPassword"
+              formControlName="confirmPassword" 
+              [type]="showConfirmPassword ? 'text' : 'password'"
+              class="form-input"
+              placeholder="Re-enter your password"
+              [class.error]="(form.hasError('passwordsMismatch') || form.controls.confirmPassword.invalid) && form.controls.confirmPassword.touched"
+              autocomplete="new-password"
+            />
+            <button type="button" class="toggle-visibility" (click)="showConfirmPassword = !showConfirmPassword" [attr.aria-label]="showConfirmPassword ? 'Hide password' : 'Show password'">
+              {{ showConfirmPassword ? '🙈' : '👁️' }}
+            </button>
+          </div>
+          <div class="error-message" *ngIf="form.controls.confirmPassword.errors?.['required'] && form.controls.confirmPassword.touched">
+            Please confirm your password
+          </div>
+          <div class="error-message" *ngIf="form.hasError('passwordsMismatch') && form.controls.confirmPassword.touched">
+            Passwords do not match
           </div>
         </div>
 

@@ -86,6 +86,15 @@ export class AuthService {
       }));
   }
 
+  requestPasswordReset(email: string) {
+    const normalized = (email || '').trim().toLowerCase();
+    return this.http.post<{ ok: boolean; reset_token?: string }>(`${this.baseUrl}/auth/forgot-password`, { email: normalized });
+  }
+
+  resetPassword(token: string, password: string) {
+    return this.http.post<{ ok: boolean }>(`${this.baseUrl}/auth/reset-password`, { token, password });
+  }
+
   fetchMe() {
     return this.http.get<User>(`${this.baseUrl}/me`)
       .pipe(tap(u => this.setUser(u)));

@@ -54,9 +54,14 @@ class Story(Base):
     # New: cached cover image for fast listing (last chapter image)
     cover_image_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
+    # New: language for the story (fr, es, en, de)
+    language: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
     
     # New: persisted character IDs as JSON array of integers
     character_ids_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # New: persistent story bible for consistency (JSON)
+    bible_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship(backref="stories")
     chapters: Mapped[list["Chapter"]] = relationship(backref="story", cascade="all, delete-orphan")
@@ -71,6 +76,9 @@ class Chapter(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     image_url: Mapped[str] = mapped_column(Text, nullable=True)
+    audio_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    user_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Store the user's original prompt for this chapter
+    is_final: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")  # Whether this is the final chapter
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

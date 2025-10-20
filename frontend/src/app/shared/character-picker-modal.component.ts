@@ -18,9 +18,6 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
         </div>
 
         <div class="body">
-          <div class="upload">
-            <button type="button" class="create-btn" (click)="openBuilder()">Create new character</button>
-          </div>
 
           <!-- Loading Spinner -->
           <div *ngIf="loadingItems" class="loading-container">
@@ -43,6 +40,7 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
         </div>
 
         <div class="footer">
+          <button type="button" class="create-btn" (click)="openBuilder()">Create new character</button>
           <button type="button" class="cancel" (click)="close.emit()">Cancel</button>
         </div>
       </div>
@@ -87,16 +85,16 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
                   {{ activeTab === 'describe' ? 'Describe your character' : '' }}
                 </div>
                 
-                <div class="spinner-overlay" *ngIf="loading"><div class="spinner"></div></div>
+              <div class="spinner-overlay" *ngIf="loading"><div class="spinner"></div></div>
               </div>
               
               <!-- Upload Tab -->
               <div *ngIf="activeTab === 'upload'">
                 <div class="upload-buttons" style="margin-top:0.6rem;">
                   <label class="upload-btn icon-only">
-                    <input type="file" accept="image/*" (change)="onBuilderUpload($event)" />
+                  <input type="file" accept="image/*" (change)="onBuilderUpload($event)" />
                     <span class="icon">📤</span>
-                  </label>
+                </label>
                   
                   <button type="button" class="camera-btn icon-only" *ngIf="!cameraActive" (click)="startCamera()">
                     <span class="icon">📷</span>
@@ -106,22 +104,45 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
             </div>
             
             <div class="controls">
-              <label class="field">Character name
+              <!-- Name field appears only after image has been generated in Upload tab, or always in Describe tab -->
+              <label class="field" *ngIf="generatedImage && !isEditingGenerated">
+                Character name
                 <input type="text" [(ngModel)]="characterName" placeholder="e.g., Emma the Explorer" />
+                <div *ngIf="nameError" style="color:#d33; font-size:0.85rem; margin-top:0.25rem;">Please enter a name.</div>
               </label>
-              
+
               <!-- Character description for describe tab -->
-              <label *ngIf="activeTab === 'describe'" class="field">
+              <label *ngIf="activeTab === 'describe' && !generatedImage" class="field">
                 Character description
                 <textarea [(ngModel)]="characterDescription" placeholder="e.g., A brave young knight with golden hair, wearing a blue cape and carrying a wooden sword" rows="4"></textarea>
+                <div *ngIf="descError && !generatedImage" style="color:#d33; font-size:0.85rem; margin-top:0.25rem;">Please enter a description.</div>
               </label>
-              
+
+              <!-- Edit prompt appears when editing after generation (both Upload and Describe) -->
+              <label *ngIf="generatedImage && isEditingGenerated" class="field">
+                Edit prompt
+                <textarea [(ngModel)]="editPrompt" placeholder="Describe changes (e.g., add a small star on the hat). Identity and pose must stay the same. Use a white background." rows="3"></textarea>
+              </label>
+
               <div class="row">
-                <button class="solid" *ngIf="!generatedImage" (click)="onBuilderGenerate()" [disabled]="!canGenerate() || loading">{{ loading ? 'Generating…' : 'Generate' }}</button>
-                <button class="outline" *ngIf="generatedImage" (click)="onBuilderSave()" [disabled]="savingCharacter">
-                  {{ savingCharacter ? 'Creating...' : 'Create Character' }}
-                </button>
-                <button class="outline" *ngIf="generatedImage" (click)="onBuilderReset()">Reset</button>
+                <!-- Before generation (Upload tab): only Generate button -->
+                <button class="solid" *ngIf="activeTab === 'upload' && baseImage && !generatedImage" (click)="onBuilderGenerate()" [disabled]="loading">{{ loading ? 'Generating…' : 'Generate' }}</button>
+                <button class="solid" *ngIf="activeTab === 'describe' && !generatedImage" (click)="onBuilderGenerate()" [disabled]="loading">{{ loading ? 'Generating…' : 'Generate' }}</button>
+
+                <!-- After generation (Upload tab, not editing): show Create + Edit -->
+                <ng-container *ngIf="generatedImage && !isEditingGenerated">
+                  <button class="outline" (click)="onBuilderSave()" [disabled]="savingCharacter">
+                    {{ savingCharacter ? 'Creating...' : 'Create Character' }}
+                  </button>
+                  <button class="outline" (click)="onStartEditGenerated()">Edit Character</button>
+                  <button class="outline" (click)="onBuilderReset()">Reset</button>
+                </ng-container>
+
+                <!-- Editing state: Regenerate + Cancel -->
+                <ng-container *ngIf="generatedImage && isEditingGenerated">
+                  <button class="solid" (click)="onRefineGenerated()" [disabled]="loading">{{ loading ? 'Regenerating…' : 'Regenerate' }}</button>
+                  <button class="outline" (click)="onCancelEditGenerated()" [disabled]="loading">Cancel</button>
+                </ng-container>
               </div>
             </div>
           </div>
@@ -135,18 +156,20 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
   styles: [
     `
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index: 2000; }
-    .modal { position: relative; z-index: 1; width: 90%; max-width: 720px; background: #111; color: #fff; border: 2px solid var(--light-gray); border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.4); }
+    .modal { position: relative; z-index: 1; width: 90%; max-width: 720px; background: var(--background-light); color: var(--text-dark); border: 2px solid var(--border-light); border-radius: 20px; box-shadow: 0 20px 60px var(--shadow-medium); display: flex; flex-direction: column; max-height: 90vh; overflow: hidden; }
     .modal.inactive { pointer-events: none; }
     .inner-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 3000; }
     .modal.inner { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3001; max-width: 860px; }
-    .header { display:flex; align-items:center; justify-content: space-between; padding: 1rem 1rem 0.5rem; border-bottom: 1px solid var(--light-gray); }
-    .title { margin: 0; font-size: 1.25rem; }
-    .close { background: transparent; color: var(--text-gray); border: 1px solid var(--light-gray); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; }
-    .close:hover { color: #fff; border-color: var(--primary-green); }
-    .body { padding: 1rem; }
+    .header { display:flex; align-items:center; justify-content: space-between; padding: 1rem 1rem 0.5rem; border-bottom: 1px solid var(--border-light); background: linear-gradient(45deg, var(--primary-pink), var(--primary-yellow)); border-radius: 18px 18px 0 0; }
+    .title { margin: 0; font-size: 1.25rem; color: var(--text-white); font-family: 'Fredoka', sans-serif; font-weight: 700; }
+    .close { background: rgba(255, 255, 255, 0.2); color: var(--text-white); border: 1px solid rgba(255, 255, 255, 0.3); width: 28px; height: 28px; border-radius: 50%; cursor: pointer; }
+    .close:hover { background: rgba(255, 255, 255, 0.3); transform: scale(1.1); }
+    .body { padding: 1rem; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .upload { margin-bottom: 0.75rem; }
-    .create-btn { background: linear-gradient(45deg, var(--primary-green), var(--secondary-green)); border:none; color:#000; font-weight:700; border-radius:10px; padding:0.6rem 0.9rem; cursor:pointer; }
-    .upload-btn { display:inline-block; border:1px dashed var(--light-gray); color: var(--white); padding: 0.6rem 0.9rem; border-radius: 10px; cursor: pointer; }
+    .create-btn { background: linear-gradient(45deg, var(--primary-pink), var(--primary-yellow)); border:none; color: var(--text-white); font-weight:700; border-radius:30px; padding:0.6rem 0.9rem; cursor:pointer; font-family: 'Fredoka', sans-serif; box-shadow: 0 4px 12px rgba(255, 111, 145, 0.3); transition: all 0.3s ease; }
+    .create-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(255, 111, 145, 0.4); }
+    .upload-btn { display:inline-block; border:2px dashed var(--border-light); color: var(--text-dark); padding: 0.6rem 0.9rem; border-radius: 12px; cursor: pointer; background: var(--background-light); transition: all 0.3s ease; }
+    .upload-btn:hover { border-color: var(--primary-pink); background: rgba(255, 111, 145, 0.05); }
     .upload-btn input { display:none; }
     
     /* Upload options layout */
@@ -170,15 +193,22 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
       justify-content: center;
       padding: 0;
       border-radius: 50%;
-      border: 1px solid var(--light-gray);
-      background: var(--medium-gray);
-      color: var(--white);
+      border: 2px solid var(--border-light);
+      background: var(--background-light);
+      color: var(--text-dark);
+      transition: all 0.3s ease;
+    }
+    
+    .icon-only:hover {
+      border-color: var(--primary-pink);
+      background: rgba(255, 111, 145, 0.05);
+      transform: scale(1.05);
     }
     
     /* Override upload-btn styles when using icon-only */
     .upload-btn.icon-only {
-      border: 1px solid var(--light-gray);
-      background: var(--medium-gray);
+      border: 2px solid var(--border-light);
+      background: var(--background-light);
       border-radius: 50%;
       padding: 0;
     }
@@ -217,7 +247,7 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
     
     /* Camera styles */
     .camera-preview-container { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; min-height: 200px; }
-    .camera-preview { width: 100%; height: 100%; background: var(--dark-gray); border-radius: 8px; object-fit: cover; border: 1px solid var(--light-gray); min-height: 200px; }
+    .camera-preview { width: 100%; height: 100%; background: var(--background-cream); border-radius: 12px; object-fit: cover; border: 2px solid var(--border-light); min-height: 200px; }
     .camera-canvas { display: none; }
      .camera-controls-overlay { 
        position: absolute; 
@@ -232,15 +262,15 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
        width: 50px; 
        height: 50px; 
        border-radius: 50%; 
-       background: linear-gradient(45deg, var(--primary-green), var(--secondary-green)); 
+       background: linear-gradient(45deg, var(--primary-pink), var(--primary-yellow)); 
        border: 3px solid white; 
-       color: var(--black); 
+       color: var(--text-white); 
        font-size: 1.2rem; 
        cursor: pointer; 
        display: flex; 
        align-items: center; 
        justify-content: center;
-       box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+       box-shadow: 0 4px 12px rgba(255, 111, 145, 0.4);
        transition: all 0.2s ease;
      }
      
@@ -251,8 +281,8 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
        width: 30px; 
        height: 30px; 
        border-radius: 50%; 
-       background: rgba(0,0,0,0.7); 
-       border: 1px solid rgba(255,255,255,0.3); 
+       background: rgba(255, 111, 145, 0.8); 
+       border: 2px solid rgba(255,255,255,0.3); 
        color: white; 
        font-size: 1.2rem; 
        cursor: pointer; 
@@ -260,6 +290,7 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
        align-items: center; 
        justify-content: center;
        z-index: 10;
+       transition: all 0.3s ease;
      }
      
      .camera-capture-btn:hover { 
@@ -275,19 +306,19 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
      }
      
      .camera-close-btn:hover { 
-       background: rgba(255,255,255,0.2); 
-       border-color: rgba(255,255,255,0.5);
+       background: rgba(255, 111, 145, 1); 
+       transform: scale(1.1);
      }
     .camera-error { color: #ff6b6b; font-size: 0.9rem; text-align: center; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 0.5rem; border-radius: 4px; }
     .hidden { display: none !important; }
     .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 0.75rem; }
-    .cell { padding: 0; border: 1px solid var(--light-gray); background: var(--medium-gray); border-radius: 12px; overflow: hidden; cursor: pointer; position: relative; }
-    .cell:hover { border-color: var(--primary-green); }
+    .cell { padding: 0; border: 2px solid var(--border-light); background: var(--background-light); border-radius: 16px; overflow: hidden; cursor: pointer; position: relative; transition: all 0.3s ease; }
+    .cell:hover { border-color: var(--primary-pink); transform: translateY(-2px); box-shadow: 0 8px 20px var(--shadow-medium); }
     .cell img { width: 100%; height: 100%; object-fit: cover; display:block; }
     .cell-name { position:absolute; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); color:#fff; font-size: 0.8rem; padding: 0.25rem 0.4rem; text-align:center; }
-    .footer { display:flex; justify-content:flex-end; padding: 0.5rem 1rem 1rem; }
-     .cancel { background: transparent; color: var(--text-gray); border: 1px solid var(--light-gray); border-radius: 8px; padding: 0.4rem 0.7rem; cursor: pointer; }
-     .cancel:hover { color: #fff; border-color: var(--primary-green); }
+    .footer { display:flex; gap: 0.5rem; justify-content:flex-end; padding: 0.5rem 1rem 1rem; }
+    .cancel { background: transparent; color: var(--text-medium); border: 2px solid var(--border-light); border-radius: 12px; padding: 0.4rem 0.7rem; cursor: pointer; font-family: 'Fredoka', sans-serif; transition: all 0.3s ease; }
+    .cancel:hover { color: var(--primary-pink); border-color: var(--primary-pink); background: rgba(255, 111, 145, 0.05); }
      
      /* Loading Spinner Styles */
      .loading-container {
@@ -309,8 +340,8 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
        width: 32px;
        height: 32px;
        border-radius: 50%;
-       border: 3px solid var(--light-gray);
-       border-top-color: var(--primary-green);
+       border: 3px solid var(--border-light);
+       border-top-color: var(--primary-pink);
        animation: spin 1s linear infinite;
      }
      
@@ -338,24 +369,42 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
     .spinner-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.25); }
     .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--light-gray); border-top-color: var(--primary-green); animation: spin 0.9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .placeholder { color: var(--text-gray); }
+    .placeholder { 
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      background: #f0f0f0;
+      border-radius: 12px;
+      border: 2px dashed var(--border-light);
+      color: var(--text-medium);
+      font-family: 'Fredoka', sans-serif;
+      font-size: 1rem;
+      min-height: 200px;
+    }
     .controls { display:flex; flex-direction:column; gap: 0.6rem; }
-    .field { color:#fff; display:flex; flex-direction:column; gap:0.25rem; }
-    .field input { background: var(--dark-gray); color:#fff; border:1px solid var(--light-gray); border-radius:8px; padding: 0.5rem 0.6rem; width: 100%; max-width: 280px; }
-    .field textarea { background: var(--dark-gray); color:#fff; border:1px solid var(--light-gray); border-radius:8px; padding: 0.5rem 0.6rem; width: 100%; max-width: 280px; resize: vertical; min-height: 80px; }
+    .field { color: var(--text-dark); display:flex; flex-direction:column; gap:0.25rem; }
+    .field input { background: var(--background-light); color: var(--text-dark); border:2px solid var(--border-light); border-radius:12px; padding: 0.5rem 0.6rem; width: 100%; max-width: 280px; font-family: 'Fredoka', sans-serif; transition: all 0.3s ease; }
+    .field input:focus { outline: none; border-color: var(--primary-pink); box-shadow: 0 0 0 3px rgba(255, 111, 145, 0.1); }
+    .field textarea { background: var(--background-light); color: var(--text-dark); border:2px solid var(--border-light); border-radius:12px; padding: 0.5rem 0.6rem; width: 100%; max-width: 280px; resize: vertical; min-height: 80px; font-family: 'Fredoka', sans-serif; transition: all 0.3s ease; }
+    .field textarea:focus { outline: none; border-color: var(--primary-pink); box-shadow: 0 0 0 3px rgba(255, 111, 145, 0.1); }
     .row { display:flex; gap:0.5rem; flex-wrap: wrap; }
-    .solid { background: linear-gradient(45deg, var(--primary-green), var(--secondary-green)); border:none; color:#000; font-weight:700; border-radius:10px; padding:0.6rem 0.9rem; cursor:pointer; flex: 1; min-width: 120px; }
-    .outline { background: transparent; border:1px solid var(--light-gray); color:#fff; border-radius:10px; padding:0.6rem 0.9rem; cursor:pointer; flex: 1; min-width: 120px; }
+    .solid { background: linear-gradient(45deg, var(--primary-pink), var(--primary-yellow)); border:none; color: var(--text-white); font-weight:700; border-radius:30px; padding:0.6rem 0.9rem; cursor:pointer; flex: 1; min-width: 120px; font-family: 'Fredoka', sans-serif; box-shadow: 0 4px 12px rgba(255, 111, 145, 0.3); transition: all 0.3s ease; }
+    .solid:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(255, 111, 145, 0.4); }
+    .outline { background: transparent; border:2px solid var(--border-light); color: var(--text-dark); border-radius:12px; padding:0.6rem 0.9rem; cursor:pointer; flex: 1; min-width: 120px; font-family: 'Fredoka', sans-serif; transition: all 0.3s ease; }
+    .outline:hover { border-color: var(--primary-pink); background: rgba(255, 111, 145, 0.05); }
     
     /* Tabs */
-    .tabs { display: flex; margin-bottom: 1rem; border-bottom: 1px solid var(--light-gray); }
-    .tab { background: transparent; color: var(--text-gray); border: none; padding: 0.5rem 1rem; cursor: pointer; border-bottom: 2px solid transparent; flex: 1; text-align: center; }
-    .tab.active { color: #fff; border-bottom-color: var(--primary-green); }
-    .tab:hover { color: #fff; }
+    .tabs { display: flex; margin-bottom: 1rem; border-bottom: 2px solid var(--border-light); }
+    .tab { background: transparent; color: var(--text-medium); border: none; padding: 0.5rem 1rem; cursor: pointer; border-bottom: 2px solid transparent; flex: 1; text-align: center; font-family: 'Fredoka', sans-serif; transition: all 0.3s ease; }
+    .tab.active { color: var(--primary-pink); border-bottom-color: var(--primary-pink); }
+    .tab:hover { color: var(--primary-pink); }
     
     /* Mobile Responsive */
     @media (max-width: 768px) {
-      .modal { width: 95%; max-width: none; margin: 1rem; }
+      .modal { width: 95%; max-width: none; margin: 1rem; max-height: 92vh; }
       .builder { grid-template-columns: 1fr; gap: 1rem; }
       .field input, .field textarea { max-width: none; width: 100%; }
       .upload-buttons { flex-direction: column; gap: 0.6rem; }
@@ -413,13 +462,21 @@ export class CharacterPickerModalComponent implements OnDestroy {
   @ViewChild('canvasElement') canvasElement!: ElementRef<HTMLCanvasElement>;
 
   private _open = false;
+  @Input() createOnly = false;
   @Input() set open(v: boolean) {
     this._open = v;
-    if (v) this.loadExisting();
+    if (v) {
+      if (this.createOnly) {
+        this.showBuilder = true;
+      } else {
+        this.loadExisting();
+      }
+    }
   }
   get open() { return this._open; }
   @Output() close = new EventEmitter<void>();
   @Output() pick = new EventEmitter<{ id:number; image:string; name?: string | null }>();
+  @Output() created = new EventEmitter<void>();
 
   // Items from backend
   items: { id:number; image:string; name?: string | null }[] = [];
@@ -432,9 +489,13 @@ export class CharacterPickerModalComponent implements OnDestroy {
   generatedImage: string | null = null;
   characterName: string = '';
   characterDescription: string = '';
+  editPrompt: string = '';
   loading = false;
   savingCharacter = false;
   showAddCredits = false;
+  isEditingGenerated = false;
+  nameError = false;
+  descError = false;
   
   // Camera state
   cameraActive = false;
@@ -461,7 +522,7 @@ export class CharacterPickerModalComponent implements OnDestroy {
     this.generatedImage = null; 
     this.characterName = ''; 
     this.characterDescription = '';
-    this.loading = false;
+    this.loading = false; 
     this.savingCharacter = false;
     this.stopCamera();
   }
@@ -471,9 +532,11 @@ export class CharacterPickerModalComponent implements OnDestroy {
     this.baseImage = null;
     this.generatedImage = null;
     this.characterName = '';
+    this.editPrompt = '';
     this.characterDescription = '';
     this.loading = false;
     this.savingCharacter = false;
+    this.isEditingGenerated = false;
     this.stopCamera();
   }
 
@@ -490,19 +553,26 @@ export class CharacterPickerModalComponent implements OnDestroy {
     const file = input?.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => { this.baseImage = String(reader.result || ''); this.generatedImage = null; };
+    reader.onload = () => { this.baseImage = String(reader.result || ''); this.generatedImage = null; this.editPrompt = ''; };
     reader.readAsDataURL(file);
   }
 
   onBuilderGenerate() {
-    if (!this.canGenerate()) return;
+    if (!this.canGenerate()) {
+      if (this.activeTab === 'describe' && !((this.characterDescription || '').trim())) {
+        this.descError = true;
+      }
+      return;
+    }
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
     this.loading = true;
     
     if (this.activeTab === 'upload') {
       // Upload mode: transform existing image
       const prompt = `Keep identity and pose. Transform into a kid-friendly character${this.characterName ? ' named ' + this.characterName : ''}.`;
-      this.http.post<{ imageUrl?: string }>(`${this.auth.baseUrl}/ai/generate-character`, { prompt, image: this.baseImage }, { headers })
+      // Force white background
+      const fullPrompt = `${prompt} Use a white background.`;
+      this.http.post<{ imageUrl?: string }>(`${this.auth.baseUrl}/ai/generate-character`, { prompt: fullPrompt, image: this.baseImage }, { headers })
         .subscribe({ 
           next: (res) => { this.generatedImage = res?.imageUrl || null; }, 
           error: (error) => {
@@ -518,7 +588,7 @@ export class CharacterPickerModalComponent implements OnDestroy {
       const prompt = `Create a kid-friendly character${this.characterName ? ' named ' + this.characterName : ''}. ${this.characterDescription}. Disney Pixar style, friendly and colorful.`;
       this.http.post<{ imageUrl?: string }>(`${this.auth.baseUrl}/ai/generate-character-from-text`, { prompt }, { headers })
         .subscribe({ 
-          next: (res) => { this.generatedImage = res?.imageUrl || null; }, 
+          next: (res) => { this.generatedImage = res?.imageUrl || null; this.descError = false; }, 
           error: (error) => {
             this.loading = false;
             if (error.status === 402) {
@@ -530,17 +600,46 @@ export class CharacterPickerModalComponent implements OnDestroy {
     }
   }
 
+  onRefineGenerated() {
+    if (!this.generatedImage) return;
+    const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
+    this.loading = true;
+    // Use original uploaded photo as identity reference; new prompt refines the output
+    const refine = (this.editPrompt || '').trim();
+    const prompt = `Keep identity and pose from the first reference. ${refine || 'Slightly improve the lighting and clarity.'} Use a white background.`;
+    // Build references: prefer original base if available; otherwise use the current generated image as self-reference
+    const refs = this.baseImage ? [this.baseImage, this.generatedImage] : [this.generatedImage];
+    this.http.post<{ imageUrl?: string }>(`${this.auth.baseUrl}/ai/generate-image`, { prompt, images: refs, mode: 'character_refine' }, { headers })
+      .subscribe({
+        next: (res) => { this.generatedImage = res?.imageUrl || this.generatedImage; },
+        error: (error) => {
+          this.loading = false;
+          if (error.status === 402) {
+            this.showAddCredits = true;
+          }
+        },
+        complete: () => { this.loading = false; this.isEditingGenerated = false; }
+      });
+  }
+
+  onStartEditGenerated() { this.isEditingGenerated = true; }
+  onCancelEditGenerated() { this.isEditingGenerated = false; this.editPrompt = ''; }
+
   onBuilderSave() {
     if (!this.generatedImage || this.savingCharacter) return;
+    const trimmed = (this.characterName || '').trim();
+    if (!trimmed) { this.nameError = true; return; }
+    this.nameError = false;
     
     this.savingCharacter = true;
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
-    this.http.post<{ id:number; image:string; name?: string }>(`${this.auth.baseUrl}/characters`, { image: this.generatedImage, name: (this.characterName || null) }, { headers })
+    this.http.post<{ id:number; image:string; name?: string }>(`${this.auth.baseUrl}/characters`, { image: this.generatedImage, name: trimmed }, { headers })
       .subscribe({ 
         next: () => { 
           this.closeBuilder(); 
           this.loadExisting(); 
           this.savingCharacter = false;
+          try { this.created.emit(); } catch {}
         },
         error: () => {
           this.savingCharacter = false;

@@ -51,4 +51,8 @@ export class LoginModalComponent {
   switchToSignup() {
     this.modalService.switchToSignup();
   }
+
+  openForgotPassword() {
+    this.modalService.openForgotPassword();
+  }
 }

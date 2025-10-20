@@ -28,31 +28,41 @@ import { AuthService } from '../auth/auth.service';
   `,
   styles: [
     `
-    .dashboard-container { padding: 2rem; width: 100%; margin: 0; }
+    .dashboard-container { 
+      padding: 2rem; 
+      width: 100%; 
+      margin: 0; 
+      background: linear-gradient(135deg, var(--background-cream) 0%, var(--background-blue) 100%);
+      min-height: 100vh;
+    }
     .dashboard-container.main-with-sidebar { padding-left: calc(var(--sidebar-width) + var(--sidebar-gap)); box-sizing: border-box; }
     .dashboard-container h1 {
-      color: var(--white);
+      color: var(--text-dark);
       font-size: 2.2rem;
       font-weight: 700;
       margin-bottom: 1.25rem;
-      background: linear-gradient(45deg, var(--white), var(--primary-green));
+      background: linear-gradient(45deg, var(--primary-pink), var(--primary-yellow), var(--primary-purple));
       -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      font-family: 'Fredoka', sans-serif;
     }
-    .filters .small { background: transparent; }
-    .filters .small.selected { border-color: var(--primary-green); background: rgba(0,255,136,0.1); }
+    .filters .small { background: transparent; border-color: var(--border-light); color: var(--text-medium); }
+    .filters .small:hover { background: var(--primary-pink); color: var(--text-white); }
+    .filters .small.selected { border-color: var(--primary-pink); background: rgba(255, 111, 145, 0.1); }
     /* Button chip styles (match dashboard) */
     .small { 
-      background: var(--light-gray); 
-      color: var(--white); 
-      border:1px solid var(--light-gray); 
-      border-radius: 8px; 
+      background: var(--primary-pink); 
+      color: var(--text-white); 
+      border:2px solid var(--primary-pink); 
+      border-radius: 12px; 
       padding: 0.4rem 0.6rem; 
       cursor:pointer; 
+      font-family: 'Fredoka', sans-serif;
+      font-weight: 600;
+      transition: all 0.3s ease;
     }
-    .small:hover { border-color: var(--primary-green); }
-    .small.selected { border-color: var(--primary-green); background: rgba(0,255,136,0.1); }
-    .filters .small { color: var(--white); }
-    .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--light-gray); border-top-color: var(--primary-green); animation: spin 0.9s linear infinite; }
+    .small:hover { background: var(--primary-yellow); border-color: var(--primary-yellow); transform: translateY(-1px); }
+    .small.selected { border-color: var(--primary-pink); background: rgba(255, 111, 145, 0.1); }
+    .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--border-light); border-top-color: var(--primary-pink); animation: spin 0.9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     @media (max-width: 900px) {
       .dashboard-container.main-with-sidebar { padding-left: 30px; }

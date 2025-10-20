@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  flaskapp2:
+    build:
+      context: ./backend
+      dockerfile: flask.dockerfile
+    image: miregistri.azurecr.io/flaskapp:2.0.1
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:password@db:5432/ideas_recommendation
+
+  angularapp2:
+    build:
+      context: ./frontend
+      dockerfile: angular-azure.dockerfile
+    image: miregistri.azurecr.io/angularapp:2.0.1

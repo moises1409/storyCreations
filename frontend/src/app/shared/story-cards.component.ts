@@ -56,19 +56,19 @@ export interface StorySummary {
   styles: [
     `
     .cards { display:grid; gap: 0.75rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-    .story-card { background: var(--medium-gray); border:1px solid var(--light-gray); border-radius: 14px; overflow: hidden; cursor: pointer; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
-    .story-card:hover { border-color: var(--primary-green); box-shadow: 0 10px 30px rgba(0,255,136,0.15); }
-    .thumb { position: relative; width: 100%; aspect-ratio: 16 / 10; background: var(--dark-gray); }
+    .story-card { background: var(--background-light); border:2px solid var(--border-light); border-radius: 16px; overflow: hidden; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px var(--shadow-light); }
+    .story-card:hover { border-color: var(--primary-pink); box-shadow: 0 8px 20px var(--shadow-medium); transform: translateY(-2px); }
+    .thumb { position: relative; width: 100%; aspect-ratio: 16 / 10; background: var(--background-cream); }
     .thumb img { width: 100%; height: 100%; object-fit: cover; display:block; }
-    .status { position: absolute; top: 10px; right: 10px; font-size: 12px; padding: 2px 8px; border-radius: 999px; border:1px solid var(--light-gray); color: var(--white); background: rgba(0,0,0,0.35); backdrop-filter: blur(2px); }
-    .status.finished { border-color: var(--primary-green); color: var(--primary-green); background: rgba(0,255,136,0.08); }
+    .status { position: absolute; top: 10px; right: 10px; font-size: 12px; padding: 4px 8px; border-radius: 12px; border:2px solid var(--border-light); color: var(--text-dark); background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(2px); font-family: 'Fredoka', sans-serif; font-weight: 600; }
+    .status.finished { border-color: var(--primary-pink); color: var(--primary-pink); background: rgba(255, 111, 145, 0.1); }
     .card-body { padding: 0.75rem; }
-    .title { color: var(--white); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .meta { color: var(--text-gray); font-size: 0.9rem; }
+    .title { color: var(--text-dark); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'Fredoka', sans-serif; }
+    .meta { color: var(--text-medium); font-size: 0.9rem; font-family: 'Fredoka', sans-serif; }
     .meta-row { display: flex; align-items: center; justify-content: space-between; margin-top: 0.25rem; }
-    .delete-btn { width: 24px; height: 24px; border-radius: 6px; border:1px solid var(--light-gray); background: transparent; color: var(--text-gray); display:flex; align-items:center; justify-content:center; cursor:pointer; transition: border-color 0.2s ease, color 0.2s ease; }
+    .delete-btn { width: 24px; height: 24px; border-radius: 8px; border:2px solid var(--border-light); background: transparent; color: var(--text-medium); display:flex; align-items:center; justify-content:center; cursor:pointer; transition: all 0.3s ease; }
     .delete-btn .icon { width: 14px; height: 14px; }
-    .delete-btn:hover { color: #ff6b6b; border-color: #ff6b6b; }
+    .delete-btn:hover { color: #ff6b6b; border-color: #ff6b6b; background: rgba(255, 107, 107, 0.1); transform: scale(1.1); }
     `
   ]
 })

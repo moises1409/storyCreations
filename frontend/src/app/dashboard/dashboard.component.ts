@@ -80,11 +80,18 @@ export class DashboardComponent implements OnInit {
   }
 
   // Handle new widget output
-  onGenerate(payload: { seed: string; character_ids: number[] }) {
+  onGenerate(payload: { seed: string; language: string; character_ids: number[]; characters?: { id:number; name?: string | null }[]; character_images?: string[] }) {
     const value = (payload?.seed ?? '').trim();
     if (!value) return;
-    // Pass seed and optional character IDs via navigation state
-    this.router.navigate(['/story/new'], { queryParams: { seed: value }, state: { character_ids: payload.character_ids || [] } });
+    // Pass seed, language and optional character IDs via navigation state
+    this.router.navigate(['/story/new'], { 
+      queryParams: { seed: value, language: payload.language || '' }, 
+      state: { 
+        character_ids: payload.character_ids || [],
+        characters: (payload.characters || []).filter(Boolean),
+        character_images: (payload.character_images || []).filter(Boolean)
+      } 
+    });
   }
 
   setFilter(f: 'all'|'in_progress'|'finished') { this.filter = f; }
