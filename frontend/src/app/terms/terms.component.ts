@@ -14,7 +14,7 @@ import { RouterModule } from '@angular/router';
 
       <p>
         These Terms of Service ("Terms") govern your access to and use of
-        linked-ideas.com (the "Website") and the services provided, including
+        talikoo.com (the "Website") and the services provided, including
         story ideation, chapter generation, voice narration playback, image
         generation, and related features (collectively, the "Services"). By
         using the Services, you agree to these Terms.
@@ -102,7 +102,7 @@ import { RouterModule } from '@angular/router';
   ]
 })
 export class TermsComponent {
-  contactEmail = 'info@linked-ideas.com';
+  contactEmail = 'contact@talikoo.com';
   lastUpdated = new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date());
 }
 

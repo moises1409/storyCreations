@@ -1,12 +1,14 @@
-import { Component, EventEmitter, Output, Input, inject, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, EventEmitter, Output, Input, inject, OnChanges, SimpleChanges, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { CharacterPickerModalComponent } from './character-picker-modal.component';
+import { HttpClient, HttpClientModule } from '@angular/common/http';
+import { CreditHintComponent } from './credit-hint.component';
 
 @Component({
   standalone: true,
   selector: 'app-generate-story-widget',
-  imports: [CommonModule, ReactiveFormsModule, CharacterPickerModalComponent],
+  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, CharacterPickerModalComponent, CreditHintComponent],
   template: `
     <div class="welcome-card start-card" style="padding-bottom:2rem;">
       <div class="char-section">
@@ -42,10 +44,12 @@ import { CharacterPickerModalComponent } from './character-picker-modal.componen
           </div>
           <div class="prompt-actions">
             <button class="dashboard-btn" type="submit" [disabled]="form.invalid">Generate my story</button>
+            <button type="button" class="info-icon" (click)="toggleCredit('Costs ' + creditChapterCost + ' credits', $event); $event.stopPropagation()">ⓘ</button>
           </div>
         </div>
       </form>
     </div>
+    <app-credit-hint [open]="showCost" [text]="costText" [top]="costTop" [left]="costLeft" (requestClose)="closeCost()"></app-credit-hint>
     <app-character-picker-modal [open]="pickerOpen" (close)="closePicker()" (pick)="onPicked($event)"></app-character-picker-modal>
   `,
   styles: [
@@ -57,7 +61,9 @@ import { CharacterPickerModalComponent } from './character-picker-modal.componen
     .prompt-area { padding: 0.75rem; display:grid; grid-template-columns: 1fr auto; gap: 0.75rem; align-items: start; }
     .prompt-area.column { grid-template-columns: 1fr; }
     .big-input { min-height: 96px; }
-    .prompt-actions { display:flex; justify-content: flex-end; }
+    .prompt-actions { display:flex; justify-content: flex-end; align-items: center; gap: 0.5rem; }
+    .info-icon { background: transparent; border: 1px solid var(--border-light); color: #6b7280; border-radius: 50%; width: 22px; height: 22px; display:inline-flex; align-items:center; justify-content:center; cursor: pointer; }
+    .info-icon:hover { background: rgba(0,0,0,0.04); }
 
     .form-input { background: var(--background-light); border: 2px solid var(--border-light); border-radius: 12px; padding: 0.7rem 0.9rem; color: var(--text-dark); font-family: 'Fredoka', sans-serif; transition: all 0.3s ease; }
     .form-input:focus { outline: none; border-color: var(--primary-pink); box-shadow: 0 0 0 3px rgba(255, 111, 145, 0.1); }
@@ -90,8 +96,9 @@ import { CharacterPickerModalComponent } from './character-picker-modal.componen
     `
   ]
 })
-export class GenerateStoryWidgetComponent implements OnChanges {
+export class GenerateStoryWidgetComponent implements OnChanges, OnInit {
   private fb = inject(FormBuilder);
+  private http = inject(HttpClient);
 
   @Output() generate = new EventEmitter<{ seed: string; language: string; character_ids: number[]; characters: { id: number; name?: string | null }[]; character_images: string[] }>();
 
@@ -125,6 +132,9 @@ export class GenerateStoryWidgetComponent implements OnChanges {
   }
 
   @Input() initialImages: string[] = [];
+  @Input() initialSeed: string = '';
+  @Input() initialLanguage: string = '';
+  @Input() initialCharacters: Array<{ id:number; name?: string | null }> = [];
 
   private getVisibleSlots(): number[] {
     // Always show first slot. Reveal next only if previous has an image.
@@ -133,6 +143,38 @@ export class GenerateStoryWidgetComponent implements OnChanges {
     if (this.characterImages[1]) visible.push(2);
     return visible;
   }
+
+  // Credit hint state
+  creditChapterCost = 2;
+  showCost = false;
+  costText = '';
+  costTop = 0;
+  costLeft = 0;
+  ngOnInit(): void {
+    // Fetch current chapter cost
+    try {
+      this.http.get<{ chapter:number; audio:number; image?: number }>(`/api/billing-costs-placeholder`, { observe: 'response' });
+    } catch {}
+    try {
+      this.http.get<{ chapter:number; audio:number; image?: number }>(`${(window as any).API_BASE_URL || ''}/billing/credit-costs`)
+        .subscribe({ next: (res) => { this.creditChapterCost = Number(res?.chapter) || 2; }, error: () => {} });
+    } catch {}
+  }
+  toggleCredit(msg: string, ev: MouseEvent) {
+    this.costText = msg;
+    try {
+      const target = (ev?.currentTarget || ev?.target) as HTMLElement | undefined;
+      if (target) {
+        const rect = target.getBoundingClientRect();
+        this.costTop = Math.min(window.innerHeight - 40, rect.bottom + 8);
+        this.costLeft = Math.min(window.innerWidth - 220, Math.max(8, rect.left));
+      } else {
+        this.costTop = 80; this.costLeft = 80;
+      }
+    } catch { this.costTop = 80; this.costLeft = 80; }
+    this.showCost = !this.showCost;
+  }
+  closeCost() { this.showCost = false; this.costText = ''; }
 
   setSeed(value: string) {
     this.form.patchValue({ seed: value });
@@ -176,6 +218,21 @@ export class GenerateStoryWidgetComponent implements OnChanges {
       const imgs = (this.initialImages || []).filter(Boolean);
       for (let i = 0; i < Math.min(imgs.length, this.characterImages.length); i++) {
         this.characterImages[i] = imgs[i];
+      }
+      this.syncCharactersField();
+    }
+    if (changes['initialSeed'] && typeof this.initialSeed === 'string') {
+      if ((this.initialSeed || '').trim()) this.form.patchValue({ seed: this.initialSeed });
+    }
+    if (changes['initialLanguage'] && typeof this.initialLanguage === 'string') {
+      this.form.patchValue({ language: this.initialLanguage || '' });
+    }
+    if (changes['initialCharacters'] && Array.isArray(this.initialCharacters)) {
+      const chars = this.initialCharacters.filter(Boolean);
+      for (let i = 0; i < Math.min(chars.length, this.characterIds.length); i++) {
+        const c = chars[i];
+        this.characterIds[i] = Number.isFinite(Number(c.id)) ? Number(c.id) : null;
+        this.characterNames[i] = (typeof c.name === 'string' ? c.name : null) as (string | null);
       }
       this.syncCharactersField();
     }

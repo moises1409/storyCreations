@@ -21,6 +21,7 @@ Return a JSON-style object with the following keys:
 
 Image prompt requirements:
 - Explicitly mention using the provided reference images of the characters to ensure visual consistency.
+- It shoul be always in English
 - Focus on the environment, atmosphere, actions, and mood of the scene.
 - Do not describe the characters’ appearances (the reference images cover that). 
 - Avoid to provide characteristics of human characters in the scene like children, boy, girl, adult, age, gender, etc.
@@ -54,6 +55,7 @@ Each choice should suggest a possible action, event, or direction.
 Image prompt requirements:
 Explicitly mention using the provided reference images of the characters to ensure visual consistency.
 - Focus on the environment, atmosphere, actions, and mood of the scene.
+- It should be always in English
 - Do not describe the characters’ appearances (the reference images cover that). 
 - Avoid to provide characteristics of human characters in the scene like children, boy, girl, adult, age, gender, etc.
 - Describe what the characters are doing or how they are interacting.
@@ -81,8 +83,9 @@ Return a JSON-style object with the following keys:
 Image prompt requirements:
 - Explicitly mention using the provided reference images of the characters to ensure visual consistency.
 - Focus on the environment, atmosphere, actions, and mood of the scene.
+- It should be always in English.
 - Do not describe the characters’ appearances (the reference images cover that). 
-- Avoid to provide characteristics of human characters in the scene like childrenboy, girl, adult, age, gender, etc.
+- Avoid to provide characteristics of human characters in the scene like children, boy, girl, adult, age, gender, etc.
 - Describe what the characters are doing or how they are interacting.
 - Specify a Cartoon, vibrant, Disney-Pixar style.
 - The image should be in landscape orientation (16:9).

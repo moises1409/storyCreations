@@ -13,7 +13,7 @@ import { RouterModule } from '@angular/router';
       <p class="updated">Last updated: <span>{{ lastUpdated }}</span></p>
 
       <p>
-        Welcome to linked-ideas.com (the "Website"). This Privacy Policy explains how we
+        Welcome to talikoo.com (the "Website"). This Privacy Policy explains how we
         collect, use, disclose, and protect the personal information of our users
         ("you" or "your") when you access and use the Website.
       </p>
@@ -107,8 +107,8 @@ import { RouterModule } from '@angular/router';
   ]
 })
 export class PrivacyComponent {
-  siteUrl = 'https://linked-ideas.com';
-  contactEmail = 'info@linked-ideas.com';
+  siteUrl = 'https://www.talikoo.com';
+  contactEmail = 'contact@talikoo.com';
   lastUpdated = new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date());
 }
 

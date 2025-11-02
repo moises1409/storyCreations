@@ -1,17 +1,18 @@
-import { Component, EventEmitter, Input, Output, inject, ViewChild, ElementRef, OnDestroy } from '@angular/core';
+import { Component, EventEmitter, Input, Output, inject, ViewChild, ElementRef, OnDestroy, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../auth/auth.service';
 import { AddCreditsModalComponent } from './add-credits-modal.component';
+import { CreditHintComponent } from './credit-hint.component';
 
 @Component({
   standalone: true,
   selector: 'app-character-picker-modal',
-  imports: [CommonModule, HttpClientModule, FormsModule, AddCreditsModalComponent],
+  imports: [CommonModule, HttpClientModule, FormsModule, AddCreditsModalComponent, CreditHintComponent],
   template: `
     <div class="overlay" *ngIf="open" (click)="onBackdrop($event)">
-      <div class="modal" [class.inactive]="showBuilder" (click)="$event.stopPropagation()">
+      <div class="modal" [class.inactive]="showBuilder" (click)="onMainModalClick($event)">
         <div class="header">
           <h2 class="title">Choose a character image</h2>
           <button type="button" class="close" (click)="close.emit()">×</button>
@@ -46,7 +47,7 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
       </div>
 
       <div class="inner-backdrop" *ngIf="showBuilder" (click)="onInnerBackdrop($event)"></div>
-      <div class="modal inner" *ngIf="showBuilder" (click)="$event.stopPropagation()">
+      <div class="modal inner" *ngIf="showBuilder" (click)="onInnerModalClick($event)">
         <div class="header">
           <h3 class="title">New character</h3>
           <button type="button" class="close" (click)="closeBuilder()">×</button>
@@ -127,7 +128,9 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
               <div class="row">
                 <!-- Before generation (Upload tab): only Generate button -->
                 <button class="solid" *ngIf="activeTab === 'upload' && baseImage && !generatedImage" (click)="onBuilderGenerate()" [disabled]="loading">{{ loading ? 'Generating…' : 'Generate' }}</button>
+                <button *ngIf="activeTab === 'upload' && baseImage && !generatedImage" type="button" class="info-icon" (click)="ensureCostsLoaded(); toggleCost('Costs ' + creditChapterCost + ' credits', $event); $event.stopPropagation()">ⓘ</button>
                 <button class="solid" *ngIf="activeTab === 'describe' && !generatedImage" (click)="onBuilderGenerate()" [disabled]="loading">{{ loading ? 'Generating…' : 'Generate' }}</button>
+                <button *ngIf="activeTab === 'describe' && !generatedImage" type="button" class="info-icon" (click)="ensureCostsLoaded(); toggleCost('Costs ' + creditChapterCost + ' credits', $event); $event.stopPropagation()">ⓘ</button>
 
                 <!-- After generation (Upload tab, not editing): show Create + Edit -->
                 <ng-container *ngIf="generatedImage && !isEditingGenerated">
@@ -141,6 +144,7 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
                 <!-- Editing state: Regenerate + Cancel -->
                 <ng-container *ngIf="generatedImage && isEditingGenerated">
                   <button class="solid" (click)="onRefineGenerated()" [disabled]="loading">{{ loading ? 'Regenerating…' : 'Regenerate' }}</button>
+                  <button type="button" class="info-icon" (click)="ensureCostsLoaded(); toggleCost('Costs ' + creditChapterCost + ' credits', $event); $event.stopPropagation()">ⓘ</button>
                   <button class="outline" (click)="onCancelEditGenerated()" [disabled]="loading">Cancel</button>
                 </ng-container>
               </div>
@@ -152,6 +156,8 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
     
     <!-- Add Credits Modal -->
     <app-add-credits-modal *ngIf="showAddCredits" (closeModal)="showAddCredits=false" (choosePlan)="onAddCredits($event)"></app-add-credits-modal>
+
+  <app-credit-hint [open]="showCostModal" [text]="costText" [top]="costTop" [left]="costLeft" (requestClose)="closeCost()"></app-credit-hint>
   `,
   styles: [
     `
@@ -204,6 +210,10 @@ import { AddCreditsModalComponent } from './add-credits-modal.component';
       background: rgba(255, 111, 145, 0.05);
       transform: scale(1.05);
     }
+    .info-icon { background: transparent; border: 1px solid var(--border-light); color: #6b7280; border-radius: 50%; width: 22px; height: 22px; display:inline-flex; align-items:center; justify-content:center; cursor: pointer; }
+    .info-icon:hover { background: rgba(0,0,0,0.04); }
+    .credit-tooltip { display:none; }
+    .cost-hint { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3001; background: var(--background-light); color: var(--text-dark); border: 2px solid var(--border-light); border-radius: 12px; padding: 0.5rem 0.75rem; box-shadow: 0 16px 40px var(--shadow-medium); font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 0.9rem; }
     
     /* Override upload-btn styles when using icon-only */
     .upload-btn.icon-only {
@@ -463,6 +473,8 @@ export class CharacterPickerModalComponent implements OnDestroy {
 
   private _open = false;
   @Input() createOnly = false;
+  @Input() excludeIds: number[] = [];
+  @Input() excludeImages: string[] = [];
   @Input() set open(v: boolean) {
     this._open = v;
     if (v) {
@@ -496,6 +508,16 @@ export class CharacterPickerModalComponent implements OnDestroy {
   isEditingGenerated = false;
   nameError = false;
   descError = false;
+  // Tooltip state
+  showCostTip = false;
+  costText = '';
+  toggleCostTip(msg: string) {
+    if (this.showCostTip && this.costText === msg) {
+      this.showCostTip = false; this.costText = '';
+    } else {
+      this.costText = msg; this.showCostTip = true;
+    }
+  }
   
   // Camera state
   cameraActive = false;
@@ -527,6 +549,15 @@ export class CharacterPickerModalComponent implements OnDestroy {
     this.stopCamera();
   }
 
+  onMainModalClick(event: MouseEvent) {
+    event.stopPropagation();
+    if (this.showCostModal) this.closeCost();
+  }
+  onInnerModalClick(event: MouseEvent) {
+    event.stopPropagation();
+    if (this.showCostModal) this.closeCost();
+  }
+
   onBuilderReset() {
     // Reset builder state to initial
     this.baseImage = null;
@@ -553,7 +584,19 @@ export class CharacterPickerModalComponent implements OnDestroy {
     const file = input?.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => { this.baseImage = String(reader.result || ''); this.generatedImage = null; this.editPrompt = ''; };
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      this.generatedImage = null;
+      this.editPrompt = '';
+      // Prefer uploading to backend to get a signed URL; fallback to data URL
+      const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
+      this.http.post<{ url?: string }>(`${this.auth.baseUrl}/uploads/temp-image`, { image: dataUrl }, { headers })
+        .subscribe({
+          next: (res) => { this.baseImage = res?.url || dataUrl; },
+          error: () => { this.baseImage = dataUrl; },
+          complete: () => {}
+        });
+    };
     reader.readAsDataURL(file);
   }
 
@@ -604,12 +647,12 @@ export class CharacterPickerModalComponent implements OnDestroy {
     if (!this.generatedImage) return;
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
     this.loading = true;
-    // Use original uploaded photo as identity reference; new prompt refines the output
+    // Refine using only the latest generated image as reference
     const refine = (this.editPrompt || '').trim();
-    const prompt = `Keep identity and pose from the first reference. ${refine || 'Slightly improve the lighting and clarity.'} Use a white background.`;
-    // Build references: prefer original base if available; otherwise use the current generated image as self-reference
-    const refs = this.baseImage ? [this.baseImage, this.generatedImage] : [this.generatedImage];
-    this.http.post<{ imageUrl?: string }>(`${this.auth.baseUrl}/ai/generate-image`, { prompt, images: refs, mode: 'character_refine' }, { headers })
+    const prompt = `Keep identity and pose from the reference. ${refine || 'Slightly improve the lighting and clarity.'} Use a white background.`;
+    // Only send the latest generated image
+    const refs = [this.generatedImage];
+    this.http.post<{ imageUrl?: string }>(`${this.auth.baseUrl}/ai/generate-image`, { prompt, images: refs, mode: 'character_refine', persist: false }, { headers })
       .subscribe({
         next: (res) => { this.generatedImage = res?.imageUrl || this.generatedImage; },
         error: (error) => {
@@ -652,6 +695,60 @@ export class CharacterPickerModalComponent implements OnDestroy {
       next: (res) => { this.showAddCredits = false; },
       error: () => {}
     });
+  }
+
+  // Cost modal handlers
+  showCostModal = false;
+  // Position for small popover
+  costTop = 0;
+  costLeft = 0;
+  creditChapterCost = 2;
+  openCost(msg: string, ev?: MouseEvent) {
+    this.costText = msg;
+    try {
+      const target = (ev?.currentTarget || ev?.target) as HTMLElement | undefined;
+      if (target) {
+        const rect = target.getBoundingClientRect();
+        this.costTop = Math.min(window.innerHeight - 40, rect.bottom + 8);
+        this.costLeft = Math.min(window.innerWidth - 220, Math.max(8, rect.left));
+      } else {
+        this.costTop = 80; this.costLeft = 80;
+      }
+    } catch { this.costTop = 80; this.costLeft = 80; }
+    this.showCostModal = true;
+  }
+  toggleCost(msg: string, ev: MouseEvent) {
+    const target = (ev?.currentTarget || ev?.target) as HTMLElement | undefined;
+    let samePos = false;
+    try {
+      if (target) {
+        const rect = target.getBoundingClientRect();
+        const top = Math.min(window.innerHeight - 40, rect.bottom + 8);
+        const left = Math.min(window.innerWidth - 220, Math.max(8, rect.left));
+        samePos = Math.abs(top - this.costTop) < 2 && Math.abs(left - this.costLeft) < 2;
+        this.costTop = top; this.costLeft = left;
+      }
+    } catch {}
+    if (this.showCostModal && samePos && this.costText === msg) {
+      this.closeCost();
+    } else {
+      this.openCost(msg, ev);
+    }
+  }
+  closeCost() { this.showCostModal = false; this.costText = ''; }
+  
+  @HostListener('document:click') onDocClick() { if (this.showCostModal) this.closeCost(); }
+
+  // Fetch credit costs once for tooltips
+  private _costsLoaded = false;
+  ensureCostsLoaded() {
+    if (this._costsLoaded) return;
+    try {
+      const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
+      this.http.get<{ chapter:number; audio:number; image?: number }>(`${this.auth.baseUrl}/billing/credit-costs`, { headers })
+        .subscribe({ next: (res) => { this.creditChapterCost = Number((res as any)?.image) || Number((res as any)?.chapter) || 2; }, error: () => {} });
+    } catch {}
+    this._costsLoaded = true;
   }
 
   ngOnDestroy() {
@@ -742,12 +839,17 @@ export class CharacterPickerModalComponent implements OnDestroy {
     this.http.get<{ items?: {id:number; image:string; name?: string | null}[]; images?: string[] }>(url, { headers }).subscribe({
       next: (res) => {
         const fromItems = (res?.items || []).filter(Boolean) as {id:number; image:string; name?: string | null}[];
-        if (fromItems.length) {
-          this.items = fromItems;
-        } else {
-          const imgs = (res?.images || []).filter(Boolean) as string[];
-          this.items = imgs.map((img, idx) => ({ id: idx + 1, image: img }));
-        }
+        const imgs = (res?.images || []).filter(Boolean) as string[];
+        const itemsRaw = fromItems.length ? fromItems : imgs.map((img, idx) => ({ id: -(idx + 1), image: img }));
+        // Apply exclusions
+        const excludeIdSet = new Set((this.excludeIds || []).map(n => Number(n)).filter(n => Number.isFinite(n)));
+        const excludeImgSet = new Set((this.excludeImages || []).map(u => this.normalizeUrl(u)));
+        this.items = (itemsRaw || []).filter(it => {
+          if (!it) return false;
+          if (excludeIdSet.has(Number(it.id))) return false;
+          if (typeof it.image === 'string' && excludeImgSet.has(this.normalizeUrl(it.image))) return false;
+          return true;
+        });
         this.loadingItems = false;
       },
       error: () => { 
@@ -755,6 +857,12 @@ export class CharacterPickerModalComponent implements OnDestroy {
         this.loadingItems = false;
       }
     });
+  }
+
+  private normalizeUrl(u: string | null | undefined): string {
+    if (!u || typeof u !== 'string') return '';
+    const i = u.indexOf('?');
+    return i >= 0 ? u.slice(0, i) : u;
   }
 }
 

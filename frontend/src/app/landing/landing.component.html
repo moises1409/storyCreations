@@ -13,7 +13,7 @@
           </svg>
         </div>
         
-        <span class="logo-accent">Linked-Ideas</span>
+        <span class="logo-accent">Talikoo</span>
       </div>
       <div class="nav-links">
         <button (click)="openSignIn()" class="nav-link">Sign In</button>
@@ -24,18 +24,57 @@
 
   <!-- Hero Section -->
   <section class="hero" id="hero">
-    <div class="hero-content centered">
+    <div class="hero-content centered hero-with-covers">
       <h1 class="hero-title big">TURN BEDTIME INTO A MAGICAL ADVENTURE</h1>
       <p class="hero-subtitle wide">
         Co-create enchanting stories with your child — one chapter, one image, one imagination at a time.
       </p>
       <div class="hero-cta-row">
         <button class="primary-cta" (click)="onPrimaryCta()">
-          CREATE YOUR FIRST STORY
+          CREATE YOUR STORY
           <svg class="spark-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <path d="M12 2l1.8 4.6L18 8.4l-4.2 1.8L12 15l-1.8-4.8L6 8.4l4.2-1.8L12 2z" stroke="currentColor" stroke-width="1.5" fill="none"/>
           </svg>
         </button>
+      </div>
+      <div class="watch-link" (click)="onWatchDemoClick($event)" aria-label="Watch a short demo">
+        <span class="play-circle">▶</span>
+        <span>Watch a short demo</span>
+      </div>
+      <!-- Inline Covers just below demo link -->
+      <div class="example-covers">
+        <div class="cover-grid inline-row">
+          <div class="cover-card" (click)="openSharedStory('STORY_ID_1')">
+            <div class="thumb"><img src="/assets/cover1b.jpg" alt="Story cover: The Moonlight Detective" /></div>
+            <div class="cover-title">The Enchanted Forest</div>
+            <div class="cover-subtitle">Click to read</div>
+          </div>
+          <div class="cover-card" (click)="openSharedStory('STORY_ID_2')">
+            <div class="thumb"><img src="/assets/cover2b.jpg" alt="Story cover: Jungle of Giggles" /></div>
+            <div class="cover-title">Moonlight Detective</div>
+            <div class="cover-subtitle">Click to read</div>
+          </div>
+          <div class="cover-card" (click)="openSharedStory('STORY_ID_3')">
+            <div class="thumb"><img src="/assets/cover3b.jpg" alt="Story cover: The Rainbow Bakery" /></div>
+            <div class="cover-title">Beachside Adventure</div>
+            <div class="cover-subtitle">Click to read</div>
+          </div>
+          <div class="cover-card" (click)="openSharedStory('STORY_ID_4')">
+            <div class="thumb"><img src="/assets/cover4b.jpg" alt="Story cover: Captain Star and the Lost Planet" /></div>
+            <div class="cover-title">A magic unicorn</div>
+            <div class="cover-subtitle">Click to read</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-overlay" *ngIf="showDemoVideo" (click)="showDemoVideo = false">
+        <div class="modal-content" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <button class="modal-close" aria-label="Close" (click)="showDemoVideo = false">×</button>
+          </div>
+          <div class="modal-body">
+            <iframe *ngIf="safeDemoUrl" [src]="safeDemoUrl" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+          </div>
+        </div>
       </div>
       <!--button class="watch-link" (click)="scrollToHowItWorks()" aria-label="Watch a short video">
         <span class="play-circle">▶</span>
@@ -44,32 +83,7 @@
     </div>
   </section>
 
-  <!-- Example Covers Section -->
-  <section class="example-covers">
-    <h2 class="section-title">Story ideas to spark imagination</h2>
-    <div class="cover-grid">
-      <div class="cover-card" (click)="openSharedStory('STORY_ID_1')">
-        <div class="thumb"><img src="/assets/cover1.png" alt="Story cover: The Moonlight Detective" /></div>
-        <div class="cover-title">The Moonlight Detective</div>
-        <div class="cover-subtitle">Click to read</div>
-      </div>
-      <div class="cover-card" (click)="openSharedStory('STORY_ID_2')">
-        <div class="thumb"><img src="/assets/cover2.png" alt="Story cover: Jungle of Giggles" /></div>
-        <div class="cover-title">Jungle of Giggles</div>
-        <div class="cover-subtitle">Click to read</div>
-      </div>
-      <div class="cover-card" (click)="openSharedStory('STORY_ID_3')">
-        <div class="thumb"><img src="/assets/cover3.png" alt="Story cover: The Rainbow Bakery" /></div>
-        <div class="cover-title">The Rainbow Bakery</div>
-        <div class="cover-subtitle">Click to read</div>
-      </div>
-      <div class="cover-card" (click)="openSharedStory('STORY_ID_4')">
-        <div class="thumb"><img src="/assets/cover4.png" alt="Story cover: Captain Star and the Lost Planet" /></div>
-        <div class="cover-title">Captain Star and the Lost Planet</div>
-        <div class="cover-subtitle">Click to read</div>
-      </div>
-    </div>
-  </section>
+  
 
   <!-- Features Section -->
   <section class="features">
@@ -100,7 +114,7 @@
     <div class="hiw-list">
       <div class="hiw-row">
         <div class="hiw-image">
-          <img src="/assets/howitworks1.jpg" alt="Create characters for your story" />
+          <img src="/assets/howitworks1b.jpg" alt="Create characters for your story" />
         </div>
         <div class="hiw-text">
           <h3>Create your characters</h3>
@@ -109,29 +123,29 @@
       </div>
       <div class="hiw-row reverse">
         <div class="hiw-image">
-          <img src="/assets/howitworks2.jpg" alt="Describe your story idea" />
+          <img src="/assets/howitworks2b.jpg" alt="Describe your story idea" />
         </div>
         <div class="hiw-text">
-          <h3>Describe your story idea</h3>
-          <p>Choose a theme your child loves and write a simple prompt. We'll create the first chapter with your characters.</p>
+          <h3>Describe how the story should start</h3>
+          <p>Tell us how the story should begin. We'll create the first chapter with your characters.</p>
         </div>
       </div>
       <div class="hiw-row">
         <div class="hiw-image">
-          <img src="/assets/howitworks3.jpg" alt="Continue the adventure" />
+          <img src="/assets/howitworks3b.jpg" alt="Continue the adventure" />
         </div>
         <div class="hiw-text">
           <h3>Continue the adventure</h3>
-          <p>Decide what happens next and build the tale together, chapter by chapter.</p>
+          <p>Decide what happens next and build the tale together, chapter by chapter. You can edit the generated chapter and add more characters to the story.</p>
         </div>
       </div>
       <div class="hiw-row reverse">
         <div class="hiw-image">
-          <img src="/assets/howitworks4.jpg" alt="Finish and treasure" />
+          <img src="/assets/howitworks4b.jpg" alt="Finish and treasure" />
         </div>
         <div class="hiw-text">
           <h3>Finish & treasure</h3>
-          <p>Save it to your library or turn it into a printed book you’ll treasure.</p>
+          <p>Save it to your library, generate audio narration, and share your story with family and friends on social networks and WhatsApp. You can also turn it into a printed book you’ll treasure.</p>
         </div>
       </div>
     </div>
@@ -159,14 +173,13 @@
             <path d="M15.41 6.51l-6.82 3.98" stroke="currentColor" stroke-width="2"/>
           </svg>
         </div>
-        <span class="logo-text">Linked</span>
-        <span class="logo-accent">Ideas</span>
+        <span class="logo-accent">Talikoo</span>
       </div>
       <p class="footer-tagline">Stories that grow with imagination</p>
       <div class="footer-links">
         <a routerLink="/privacy" class="footer-link">Privacy Policy</a>
         <a routerLink="/terms" class="footer-link">Terms of Service</a>
-        <a href="mailto:info@linked-ideas.com" class="footer-link">Contact Us</a>
+        <a href="mailto:contact@talikoo.com" class="footer-link">Contact Us</a>
       </div>
     </div>
   </footer>

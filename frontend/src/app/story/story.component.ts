@@ -8,11 +8,13 @@ import { HeaderComponent } from '../shared/header.component';
 import { AddCreditsModalComponent } from '../shared/add-credits-modal.component';
 import { EbookViewerComponent } from '../shared/ebook-viewer.component';
 import { AuthService } from '../auth/auth.service';
+import { CharacterPickerModalComponent } from '../shared/character-picker-modal.component';
+import { CreditHintComponent } from '../shared/credit-hint.component';
 
 @Component({
   standalone: true,
   selector: 'app-story',
-  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, NavComponent, HeaderComponent, AddCreditsModalComponent, EbookViewerComponent],
+  imports: [CommonModule, ReactiveFormsModule, HttpClientModule, NavComponent, HeaderComponent, AddCreditsModalComponent, EbookViewerComponent, CharacterPickerModalComponent, CreditHintComponent],
   templateUrl: './story.component.html',
   styleUrls: ['./story.component.css', '../dashboard/dashboard.component.css']
 })
@@ -39,10 +41,31 @@ export class StoryComponent implements OnInit {
   error = '';
   useApiImages = true;
   showAddCredits = false;
+  shouldNavigateAfterCredits = false;
+  shouldRestoreTopicAfterCredits = false;
+  pendingChapterTopic: string = '';
+  // Credits purchase feedback
+  creditsPurchased = false;
+  purchasedCredits = 0;
+  totalCredits = 0;
+  // Restore edit prompt after credits (edit chapter flow)
+  shouldRestoreEditAfterCredits = false;
+  pendingEditPrompt: string = '';
+  pendingEditChapterIndex: number | null = null;
+  // Restore regenerate image modal after credits (chapter image regenerate)
+  shouldRestoreRegenImageAfterCredits = false;
+  pendingRegenImagePrompt: string = '';
+  pendingRegenImageChapterIndex: number | null = null;
   // Optional selected character IDs passed from dashboard
   initialCharacterIds: number[] = [];
   initialCharacters: Array<{ id: number; name?: string | null }> = [];
   initialCharacterImages: string[] = [];
+  
+  // Per-chapter character selection
+  pickerOpen = false;
+  chapterCharacterIds: number[] = [];
+  chapterCharacterImages: string[] = [];
+  chapterCharacters: Array<{ id:number; image:string; name?: string | null }> = [];
   
   // Edit chapter functionality
   showEditModal = false;
@@ -58,6 +81,52 @@ export class StoryComponent implements OnInit {
   
   // eBook properties
   showEbook = false;
+  // Small cost modal state
+  showCostModal = false;
+  costText = '';
+  costTop = 0;
+  costLeft = 0;
+  creditChapterCost = 2;
+  openCost(msg: string, ev?: MouseEvent) {
+    this.costText = msg;
+    try {
+      const target = (ev?.currentTarget || ev?.target) as HTMLElement | undefined;
+      if (target) {
+        const rect = target.getBoundingClientRect();
+        this.costTop = Math.min(window.innerHeight - 40, rect.bottom + 8);
+        this.costLeft = Math.min(window.innerWidth - 220, Math.max(8, rect.left));
+      } else {
+        this.costTop = 80; this.costLeft = 80;
+      }
+    } catch { this.costTop = 80; this.costLeft = 80; }
+    this.showCostModal = true;
+  }
+  closeCostModal() { this.showCostModal = false; this.costText = ''; }
+
+  // Toggle open/close when icon is clicked again
+  toggleCredit(msg: string, ev: MouseEvent) {
+    const target = (ev?.currentTarget || ev?.target) as HTMLElement | undefined;
+    let samePos = false;
+    try {
+      if (target) {
+        const rect = target.getBoundingClientRect();
+        const top = Math.min(window.innerHeight - 40, rect.bottom + 8);
+        const left = Math.min(window.innerWidth - 220, Math.max(8, rect.left));
+        samePos = Math.abs(top - this.costTop) < 2 && Math.abs(left - this.costLeft) < 2;
+        this.costTop = top; this.costLeft = left;
+      }
+    } catch {}
+    if (this.showCostModal && samePos && this.costText === msg) {
+      this.closeCostModal();
+    } else {
+      this.openCost(msg, ev);
+    }
+  }
+
+  onAnyModalClick(event: MouseEvent) {
+    event.stopPropagation();
+    if (this.showCostModal) this.closeCostModal();
+  }
   
 
   seedForm = this.fb.group({ 
@@ -68,6 +137,12 @@ export class StoryComponent implements OnInit {
   selectedChoice: string | null = null;
 
   ngOnInit(): void {
+    // Fetch credit costs for tooltips
+    try {
+      const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
+      this.http.get<{ chapter:number; audio:number; image?: number }>(`${this.auth.baseUrl}/billing/credit-costs`, { headers })
+        .subscribe({ next: (res) => { this.creditChapterCost = Number(res?.chapter) || 2; }, error: () => {} });
+    } catch {}
     const id = this.route.snapshot.paramMap.get('id');
     if (id && id !== 'new') {
       this.mode = 'existing';
@@ -85,6 +160,11 @@ export class StoryComponent implements OnInit {
       this.initialCharacters = Array.isArray(state.characters) ? (state.characters as any[]).map((c: any) => ({ id: Number(c?.id), name: (typeof c?.name === 'string' ? c.name : null) })) : [];
       this.initialCharacterImages = Array.isArray(state.character_images) ? (state.character_images as any[]).filter((s: any) => typeof s === 'string') : [];
       console.log('OnInit -- initialCharacterIds', this.initialCharacterIds);
+      // Initialize per-chapter selection from initial
+      this.chapterCharacterIds = [...this.initialCharacterIds];
+      this.chapterCharacterImages = [...this.initialCharacterImages];
+      // Initialize chips for new story flow as well
+      this.populateChapterCharacterChips();
       if (seedFromQuery) {
         this.seedForm.setValue({ seed: seedFromQuery, language: languageFromQuery });
         // Defer to allow initial render
@@ -99,8 +179,24 @@ export class StoryComponent implements OnInit {
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
     const base = this.auth.baseUrl;
     // Load story meta first
-    this.http.get<{ id:number; title:string; status:'in_progress'|'finished'; language?: string }>(`${base}/stories/${id}`, { headers })
-      .subscribe({ next: (meta) => { this.storyStatus = meta?.status || 'in_progress'; this.historyTitle = meta?.title || this.historyTitle; } });
+    this.http.get<{ id:number; title:string; status:'in_progress'|'finished'; language?: string; character_ids?: number[]; character_images?: string[] }>(`${base}/stories/${id}`, { headers })
+      .subscribe({ next: (meta) => { 
+        this.storyStatus = meta?.status || 'in_progress'; 
+        this.historyTitle = meta?.title || this.historyTitle; 
+        // Seed per-chapter selection from story-level selection
+        if (Array.isArray(meta?.character_ids)) {
+          this.chapterCharacterIds = (meta!.character_ids as any[]).map(x => Number(x)).filter(n => Number.isFinite(n));
+        } else {
+          this.chapterCharacterIds = [];
+        }
+        if (Array.isArray(meta?.character_images)) {
+          this.chapterCharacterImages = (meta!.character_images as any[]).filter((s: any) => typeof s === 'string');
+        } else {
+          this.chapterCharacterImages = [];
+        }
+        // Populate chips
+        this.populateChapterCharacterChips();
+      } });
     // Then load chapters
     this.http.get<Array<{ id: number; index: number; title: string; text: string; image_url?: string; audio_url?: string; user_prompt?: string; is_final?: boolean }>>(`${base}/stories/${id}/chapters`, { headers })
       .subscribe({
@@ -119,6 +215,76 @@ export class StoryComponent implements OnInit {
         error: () => { this.loading = false; },
         complete: () => { this.loading = false; }
       });
+  }
+
+  private populateChapterCharacterChips() {
+    const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
+    // Reset current chips
+    this.chapterCharacters = [];
+    // If we have IDs, try to map via /characters
+    if (this.chapterCharacterIds && this.chapterCharacterIds.length) {
+      this.http.get<{ items?: { id:number; image:string; name?: string | null }[]; images?: string[] }>(`${this.auth.baseUrl}/characters`, { headers })
+        .subscribe({
+          next: (res) => {
+            const items = Array.isArray(res?.items) ? res!.items! : [];
+            const byId = new Map<number, { image:string; name?:string|null }>();
+            for (const it of items) {
+              if (it && Number.isFinite(it.id) && typeof it.image === 'string') {
+                byId.set(Number(it.id), { image: it.image, name: (it.name ?? null) || null });
+              }
+            }
+            const chips: Array<{ id:number; image:string; name?: string | null }> = [];
+            for (const id of this.chapterCharacterIds) {
+              if (byId.has(id)) {
+                const info = byId.get(id)!;
+                chips.push({ id, image: info.image, name: info.name ?? null });
+              }
+            }
+            // Fallback: add images that are not already represented (normalize URL to ignore SAS)
+            const represented = new Set(chips.map(c => this.normalizeImageUrl(c.image)));
+            for (const img of (this.chapterCharacterImages || [])) {
+              if (typeof img !== 'string') continue;
+              const norm = this.normalizeImageUrl(img);
+              if (!represented.has(norm)) {
+                represented.add(norm);
+                chips.push({ id: 0, image: img, name: null });
+              }
+            }
+            this.chapterCharacters = chips;
+            this.syncImagesFromChips();
+          },
+          error: () => {
+            // Fallback to images only
+            this.chapterCharacters = (this.chapterCharacterImages || []).filter((s:any) => typeof s === 'string').map(img => ({ id: 0, image: img, name: null }));
+            this.syncImagesFromChips();
+          }
+        });
+    } else if (this.chapterCharacterImages && this.chapterCharacterImages.length) {
+      // Only images available
+      this.chapterCharacters = this.chapterCharacterImages.filter((s:any) => typeof s === 'string').map(img => ({ id: 0, image: img, name: null }));
+      this.syncImagesFromChips();
+    }
+  }
+
+  private syncImagesFromChips() {
+    // Deduplicate by normalized URL (drop query params)
+    const seen = new Set<string>();
+    const imgs: string[] = [];
+    for (const c of (this.chapterCharacters || [])) {
+      if (!c || typeof c.image !== 'string') continue;
+      const norm = this.normalizeImageUrl(c.image);
+      if (!seen.has(norm)) {
+        seen.add(norm);
+        imgs.push(c.image);
+      }
+    }
+    this.chapterCharacterImages = imgs as string[];
+  }
+
+  private normalizeImageUrl(url: string | null | undefined): string {
+    if (!url || typeof url !== 'string') return '';
+    const q = url.indexOf('?');
+    return q >= 0 ? url.slice(0, q) : url;
   }
 
   // Start with seed → create Chapter 1 (new story)
@@ -169,7 +335,8 @@ export class StoryComponent implements OnInit {
         
         const promptForImage = res?.image_prompt || seed;
         // Generate image without persistence; we'll commit both later
-        this.fetchChapterImageWithCharactersPersist(promptForImage, 0, undefined, undefined, this.initialCharacterImages, this.initialCharacterIds, false, (imageUrls) => {
+        // Force thumbnail generation for seed
+        this.fetchChapterImageWithCharactersPersist(promptForImage, 0, undefined, 1, this.initialCharacterImages, this.initialCharacterIds, false, (imageUrls) => {
           // After both text and image are ready, commit
           const commitBody = {
             text: ch[0]?.text || res?.text || '',
@@ -192,6 +359,8 @@ export class StoryComponent implements OnInit {
           this.error = "You're out of credits. Please upgrade your plan to continue.";
           this.chapters = []; this.phase = 'seed';
           this.showAddCredits = true;
+          // Defer navigation until credits modal is closed
+          this.shouldNavigateAfterCredits = true;
         }
         this.loading = false;
       },
@@ -211,7 +380,8 @@ export class StoryComponent implements OnInit {
     const nextCard = this.buildChapter(chapterNum, t); nextCard.text = ''; nextCard.collapsed = false;
     this.chapters = [...this.chapters, nextCard]; this.currentIndex = this.chapters.length - 1;
     this.loadingTextIndex = this.currentIndex; this.loadingImageIndex = this.currentIndex;
-    // reset inputs when generation starts
+    // Save topic to restore if credits are insufficient, then reset inputs when generation starts
+    this.pendingChapterTopic = t;
     this.userContinuation.setValue(''); this.selectedChoice = null;
     // Generate text without persisting
     this.fetchChapterDeferred(t, 'continue').subscribe({
@@ -232,7 +402,8 @@ export class StoryComponent implements OnInit {
         this.loadingTextIndex = null;
         // Generate image without persisting, then commit chapter
         const promptForImage = res?.image_prompt || t;
-        this.fetchChapterImageWithCharactersPersist(promptForImage, this.currentIndex, undefined, undefined, this.initialCharacterImages, this.initialCharacterIds, false, (imgRes) => {
+        // For next chapters, never request thumbnail/cover (omit chapter_id)
+        this.fetchChapterImageWithCharactersPersist(promptForImage, this.currentIndex, this.storyId, undefined, this.chapterCharacterImages, this.chapterCharacterIds, false, (imgRes) => {
           const body = {
             story_id: this.storyId,
             text: this.chapters[this.currentIndex]?.text || res?.text || '',
@@ -240,7 +411,9 @@ export class StoryComponent implements OnInit {
             prompt: t,
             is_final: false,
             image_url: imgRes?.imageUrl,
-            thumbnail_url: imgRes?.thumbnailUrl
+            thumbnail_url: imgRes?.thumbnailUrl,
+            character_ids: this.chapterCharacterIds,
+            character_images: this.chapterCharacterImages
           };
           this.commitChapter(body, this.currentIndex);
         });
@@ -261,6 +434,8 @@ export class StoryComponent implements OnInit {
             this.phase = 'seed';
           }
           this.showAddCredits = true;
+          // After closing the modal, restore the topic to the input
+          this.shouldRestoreTopicAfterCredits = true;
         }
         // no global loading state for next chapter
       },
@@ -278,6 +453,8 @@ export class StoryComponent implements OnInit {
     if (!this.hasText()) return;
     const t = (this.userContinuation.value ?? '').trim();
     const idea = t || 'Final chapter'; const chapterNum = this.chapters.length + 1;
+    // Save topic to restore if credits are insufficient
+    this.pendingChapterTopic = t;
     if (this.chapters.length > 0) { this.chapters = this.chapters.map(ch => ({ ...ch, collapsed: true })); }
     // Create final card immediately
     const nextCard = this.buildChapter(chapterNum, idea); nextCard.text = ''; nextCard.collapsed = false;
@@ -304,7 +481,7 @@ export class StoryComponent implements OnInit {
         this.loadingTextIndex = null;
         const promptForImage = res?.image_prompt || idea;
         // Generate image without persisting, then commit chapter (final)
-        this.fetchChapterImageWithCharactersPersist(promptForImage, this.currentIndex, undefined, undefined, this.initialCharacterImages, this.initialCharacterIds, false, (imgRes) => {
+        this.fetchChapterImageWithCharactersPersist(promptForImage, this.currentIndex, undefined, undefined, this.chapterCharacterImages, this.chapterCharacterIds, false, (imgRes) => {
           const body = {
             story_id: this.storyId,
             text: this.chapters[this.currentIndex]?.text || res?.text || '',
@@ -312,7 +489,9 @@ export class StoryComponent implements OnInit {
             prompt: idea,
             is_final: true,
             image_url: imgRes?.imageUrl,
-            thumbnail_url: imgRes?.thumbnailUrl
+            thumbnail_url: imgRes?.thumbnailUrl,
+            character_ids: this.chapterCharacterIds,
+            character_images: this.chapterCharacterImages
           };
           this.commitChapter(body, this.currentIndex);
         });
@@ -331,6 +510,8 @@ export class StoryComponent implements OnInit {
             this.chapters = last;
           }
           this.showAddCredits = true;
+          // After closing the modal, restore the topic to the input
+          this.shouldRestoreTopicAfterCredits = true;
         }
       },
       complete: () => { /* no global loading for final generation */ }
@@ -372,7 +553,13 @@ export class StoryComponent implements OnInit {
 
   onAddCredits(plan: 'starter'|'pro'|'max') {
     this.auth.addCredits(plan).subscribe({
-      next: (res) => { this.showAddCredits = false; this.error = ''; document.body.style.overflow = ''; },
+      next: (res) => {
+        this.error = ''; document.body.style.overflow = '';
+        // Show success message in modal; do not auto-close
+        this.purchasedCredits = Number((res as any)?.added) || 0;
+        this.totalCredits = Number((res as any)?.credits) || Number(this.auth.user$.value?.credits) || 0;
+        this.creditsPurchased = true;
+      },
       error: () => {}
     });
   }
@@ -430,7 +617,9 @@ export class StoryComponent implements OnInit {
     const prompt = (this.imageEditPrompt.value || '').trim();
     if (!prompt) return;
     const chapter = this.chapters[idx];
-    // Close modal
+    // Save prompt/index in case we need to restore after credits, then close modal
+    this.pendingRegenImagePrompt = prompt;
+    this.pendingRegenImageChapterIndex = idx;
     this.closeRegenImageModal();
     // Start loading spinner for image
     this.loadingImageIndex = idx;
@@ -448,12 +637,24 @@ export class StoryComponent implements OnInit {
     const url = `${this.auth.baseUrl}/ai/generate-image`;
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
     this.http.post<{ imageUrl?: string }>(url, { prompt, story_id: this.storyId, chapter_id: chapterId, images, character_ids: this.initialCharacterIds, mode: 'regenerate' }, { headers })
-      .subscribe({ next: (res) => {
-        if (res?.imageUrl) {
-          const chs = [...this.chapters];
-          if (chs[idx]) { chs[idx] = { ...chs[idx], imageUrl: res.imageUrl }; this.chapters = chs; }
-        }
-      }, complete: () => { this.loadingImageIndex = null; } });
+      .subscribe({ 
+        next: (res) => {
+          if (res?.imageUrl) {
+            const chs = [...this.chapters];
+            if (chs[idx]) { chs[idx] = { ...chs[idx], imageUrl: res.imageUrl }; this.chapters = chs; }
+          }
+        },
+        error: (err) => {
+          this.loadingImageIndex = null;
+          if (err && err.status === 402) {
+            this.error = "You're out of credits. Please upgrade your plan to continue.";
+            this.showAddCredits = true;
+            // After closing modal, return to regenerate image modal with previous prompt
+            this.shouldRestoreRegenImageAfterCredits = true;
+          }
+        },
+        complete: () => { this.loadingImageIndex = null; }
+      });
   }
   
   closeEditModal() {
@@ -469,6 +670,9 @@ export class StoryComponent implements OnInit {
     const chapter = this.chapters[this.editingChapterIndex];
     const newPrompt = this.editPrompt.value.trim();
     const chapterIndex = this.editingChapterIndex; // Store the index before closing modal
+    // Save edit prompt to restore if credits are insufficient
+    this.pendingEditPrompt = newPrompt;
+    this.pendingEditChapterIndex = chapterIndex;
     
     console.log('Edit chapter - chapter.id:', chapter.id, 'newPrompt:', newPrompt);
     
@@ -480,7 +684,7 @@ export class StoryComponent implements OnInit {
       return;
     }
     
-    // Close modal immediately
+    // Close modal immediately on regenerate
     this.closeEditModal();
     
     // Set loading states like when generating a new chapter
@@ -490,8 +694,9 @@ export class StoryComponent implements OnInit {
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
     const base = this.auth.baseUrl;
     
+    // Request edit in deferred mode (no persistence yet)
     this.http.post<{ text?: string; title_chapter?: string; image_prompt?: string; chapter_id?: number; audio_url?: string }>(`${base}/ai/edit-chapter`, 
-      { chapter_id: chapterId, prompt: newPrompt }, 
+      { chapter_id: chapterId, prompt: newPrompt, persist: false }, 
       { headers })
       .subscribe({
         next: (res) => {
@@ -519,9 +724,29 @@ export class StoryComponent implements OnInit {
             this.currentIndex = chapterIndex;
           }
           
-          // Regenerate image for the edited chapter
+          // Regenerate image for the edited chapter (deferred)
           const promptForImage = res?.image_prompt || newPrompt;
-          this.fetchChapterImage(promptForImage, chapterIndex, this.storyId, res?.chapter_id);
+          this.fetchChapterImageWithCharactersPersist(promptForImage, chapterIndex, this.storyId, res?.chapter_id, this.chapterCharacterImages, this.chapterCharacterIds, false, (imgRes) => {
+            // Commit edited chapter via dedicated endpoint
+            const url = `${this.auth.baseUrl}/ai/commit-edited-chapter`;
+            const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
+            const body = {
+              chapter_id: res?.chapter_id || Number(this.chapters[chapterIndex]?.id),
+              text: this.chapters[chapterIndex]?.text || res?.text || '',
+              title_chapter: this.chapters[chapterIndex]?.title || res?.title_chapter || '',
+              prompt: newPrompt,
+              is_final: !!this.chapters[chapterIndex]?.isFinal,
+              image_url: imgRes?.imageUrl,
+              thumbnail_url: undefined,
+              character_ids: this.chapterCharacterIds,
+              character_images: this.chapterCharacterImages
+            };
+            this.http.post<{ chapter_id?: number }>(url, body, { headers }).subscribe({
+              next: () => {},
+              error: () => {},
+              complete: () => { this.loadingImageIndex = null; }
+            });
+          });
         },
         error: (err) => {
           this.loadingTextIndex = null;
@@ -529,6 +754,8 @@ export class StoryComponent implements OnInit {
           if (err && err.status === 402) {
             this.error = "You're out of credits. Please upgrade your plan to continue.";
             this.showAddCredits = true;
+            // After closing the modal, restore the edit modal and prompt
+            this.shouldRestoreEditAfterCredits = true;
           } else {
             this.error = "Failed to edit chapter. Please try again.";
           }
@@ -559,6 +786,7 @@ export class StoryComponent implements OnInit {
   }
 
   private fetchChapterImageWithCharactersPersist(prompt: string, index: number, storyId?: number, chapterId?: number, images: string[] = [], character_ids: number[] = [], persist: boolean = true, onDone?: (res?: { imageUrl?: string; thumbnailUrl?: string }) => void) {
+    console.log('fetchChapterImageWithCharactersPersist', prompt, index, storyId, chapterId, images, character_ids, persist);
     if (!this.useApiImages) { const ch = [...this.chapters]; if (ch[index]) { ch[index] = { ...ch[index], imageUrl: '/assets/test.jpeg' }; this.chapters = ch; } this.loadingImageIndex = null; onDone?.({ imageUrl: '/assets/test.jpeg' }); return; }
     const url = `${this.auth.baseUrl}/ai/generate-image`;
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
@@ -570,6 +798,36 @@ export class StoryComponent implements OnInit {
     const url = `${this.auth.baseUrl}/ai/generate-seed`;
     const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
     return this.http.post<{ text?: string; title_story?: string; title_chapter?: string; image_prompt?: string; story_id?: number; chapter_id?: number; audio_url?: string }>(url, { prompt, character_ids, language, characters, character_images, persist }, { headers });
+  }
+
+  // Character picker handlers
+  openCharacterPicker() {
+    if (this.chapterCharacterIds.length >= 3) return;
+    this.pickerOpen = true;
+  }
+  onPickerClose() {
+    this.pickerOpen = false;
+  }
+  onPicked(item: { id:number; image:string; name?: string | null }) {
+    // Ensure unique by id
+    if (!this.chapterCharacterIds.includes(item.id)) {
+      this.chapterCharacterIds = [...this.chapterCharacterIds, item.id];
+      this.chapterCharacters = [...this.chapterCharacters, { id: item.id, image: item.image, name: item.name ?? null }];
+    }
+    // Track image references for generation
+    if (item.image && !this.chapterCharacterImages.includes(item.image)) {
+      this.chapterCharacterImages = [...this.chapterCharacterImages, item.image];
+    }
+    // Keep images in sync with chips
+    this.syncImagesFromChips();
+    // Close picker after selection
+    this.pickerOpen = false;
+  }
+  removeCharacter(id: number) {
+    this.chapterCharacterIds = this.chapterCharacterIds.filter(x => x !== id);
+    this.chapterCharacters = this.chapterCharacters.filter(c => c.id !== id);
+    // Rebuild image list from remaining chips
+    this.syncImagesFromChips();
   }
 
   private commitSeed(body: { text: string; title_story: string; title_chapter: string; language?: string; prompt: string; image_url?: string; thumbnail_url?: string; character_ids?: number[]; character_images?: string[] }) {
@@ -588,6 +846,8 @@ export class StoryComponent implements OnInit {
           if (err && err.status === 402) {
             this.error = "You're out of credits. Please upgrade your plan to continue.";
             this.showAddCredits = true;
+            // Defer navigation until credits modal is closed
+            this.shouldNavigateAfterCredits = true;
           }
         }
       });
@@ -632,6 +892,48 @@ export class StoryComponent implements OnInit {
     if (this.phase !== 'chapter') return;
     if (e.key === 'ArrowLeft') { if (this.currentIndex > 0) this.currentIndex--; }
     if (e.key === 'ArrowRight') { /* reserved */ }
+  }
+
+  onCreditsClosed() {
+    this.showAddCredits = false;
+    // Reset success state
+    this.creditsPurchased = false; this.purchasedCredits = 0; this.totalCredits = 0;
+    if (this.shouldNavigateAfterCredits) {
+      this.shouldNavigateAfterCredits = false;
+      this.router.navigate(['/dashboard'], { state: this.getDashboardPrefillState() });
+    } else if (this.shouldRestoreTopicAfterCredits) {
+      this.shouldRestoreTopicAfterCredits = false;
+      const toRestore = (this.pendingChapterTopic || '').trim();
+      if (toRestore) this.userContinuation.setValue(toRestore);
+      this.pendingChapterTopic = '';
+    } else if (this.shouldRestoreEditAfterCredits) {
+      this.shouldRestoreEditAfterCredits = false;
+      const idx = this.pendingEditChapterIndex;
+      const prompt = this.pendingEditPrompt;
+      this.pendingEditChapterIndex = null; this.pendingEditPrompt = '';
+      if (idx !== null) {
+        this.openEditModal(idx);
+        if ((prompt || '').trim()) this.editPrompt.setValue(prompt);
+      }
+    } else if (this.shouldRestoreRegenImageAfterCredits) {
+      this.shouldRestoreRegenImageAfterCredits = false;
+      const idx = this.pendingRegenImageChapterIndex;
+      const prompt = this.pendingRegenImagePrompt;
+      this.pendingRegenImageChapterIndex = null; this.pendingRegenImagePrompt = '';
+      if (idx !== null) {
+        this.openRegenImageModal(idx);
+        if ((prompt || '').trim()) this.imageEditPrompt.setValue(prompt);
+      }
+    }
+  }
+
+  private getDashboardPrefillState() {
+    const seed = (this.seedForm.value.seed ?? '').trim();
+    const language = (this.seedForm.value.language || '') as string;
+    const character_ids = (this.initialCharacterIds || []).filter((n) => Number.isFinite(n));
+    const character_images = (this.initialCharacterImages || []).filter((s) => typeof s === 'string');
+    const characters = (this.initialCharacters || []).filter(Boolean);
+    return { seed, language, character_ids, character_images, characters };
   }
 }
 

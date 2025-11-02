@@ -4,14 +4,15 @@
   <!--<h1>Children's Story Co‑Creator</h1>-->
   <div class="dashboard-content">
     <main class="main">
-      <app-add-credits-modal *ngIf="showAddCredits" (closeModal)="showAddCredits=false" (choosePlan)="onAddCredits($event)"></app-add-credits-modal>
+      <app-add-credits-modal *ngIf="showAddCredits" (closeModal)="onCreditsClosed()" (choosePlan)="onAddCredits($event)" [successMode]="creditsPurchased" [purchasedCredits]="purchasedCredits" [totalCredits]="totalCredits"></app-add-credits-modal>
       <!-- Seed phase -->
       <div *ngIf="mode==='new' && phase==='seed'" class="welcome-card start-card prompt-card">
         <div class="error" *ngIf="error" style="margin:0 0 0.5rem 0;">{{ error }}</div>
         <div class="prompt-area column">
           <textarea class="form-input big-input" rows="6" [formControl]="seedForm.controls.seed" placeholder="Give me a topic, premise and short instructions in any language"></textarea>
-          <div class="prompt-actions">
+          <div class="prompt-actions" style="display:flex; align-items:center; gap:0.5rem;">
             <button class="dashboard-btn" (click)="startWithSeed()" [disabled]="loading || seedForm.invalid">{{ loading ? 'Generating…' : 'Generate my story' }}</button>
+            <button type="button" class="info-icon" (click)="toggleCredit('Costs ' + creditChapterCost + ' credits', $event); $event.stopPropagation()">ⓘ</button>
           </div>
         </div>
         <div class="prompt-chips">
@@ -45,6 +46,7 @@
                   (click)="regenerateImage(i)">
                   Regenerate Image
                 </button>
+                
                 <button class="small" (click)="c.collapsed = !c.collapsed" [title]="c.collapsed ? 'Expand' : 'Collapse'" style="padding: 0.5rem; min-width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center;">
              <span style="font-size: 1rem; color: #6b7280; font-weight: bold;">{{ c.collapsed ? '▼' : '▲' }}</span>
            </button>
@@ -80,10 +82,27 @@
               <button class="small" *ngFor="let opt of (c?.choices || [])" (click)="onChoice(opt)">{{ opt }}</button>
             </div>
             <div class="prompt-area column">
+              <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.4rem; margin-bottom:0.5rem;">
+                <span *ngFor="let ch of chapterCharacters" style="display:inline-flex; align-items:center; gap:0.35rem; padding:0.25rem 0.5rem; background:#f5f1ff; border:1px solid #e8e1ff; border-radius:999px;">
+                  <img *ngIf="ch.image" [src]="ch.image" alt="char" style="width:22px; height:22px; object-fit:cover; border-radius:50%;"/>
+                  <span style="font-size:0.85rem; color:#4b5563;">{{ ch.name || ('#' + ch.id) }}</span>
+                  <button type="button" (click)="removeCharacter(ch.id)" aria-label="Remove character" title="Remove" style="background:transparent; border:none; color:#6b7280; cursor:pointer; font-weight:700; line-height:1;">×</button>
+                </span>
+                <button 
+                  *ngIf="chapterCharacterIds.length < 3"
+                  class="small" 
+                  (click)="openCharacterPicker()" 
+                  title="Add character"
+                  style="width:32px;height:32px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;">
+                  +
+                </button>
+                <span *ngIf="chapterCharacterIds.length >= 3" style="font-size:0.85rem;color:#6b7280;">To add, remove another character</span>
+              </div>
               <textarea class="form-input" rows="3" [formControl]="userContinuation" placeholder="Write your own continuation..." (input)="onUserTextInput()"></textarea>
-              <div class="prompt-actions">
+              <div class="prompt-actions" style="display:flex; align-items:center; gap:0.5rem;">
                 <button class="small" (click)="finalizeStory()" [disabled]="loading || !hasText()">Finish story</button>
                 <button class="dashboard-btn" *ngIf="chapters.length < maxChapters - 1" (click)="generateNextChapter()" [disabled]="loading || !hasText()">Generate next chapter</button>
+                <button *ngIf="chapters.length < maxChapters - 1" type="button" class="info-icon" (click)="toggleCredit('Costs ' + creditChapterCost + ' credits', $event); $event.stopPropagation()">ⓘ</button>
                 <button class="small" *ngIf="error" (click)="showAddCredits=true">Add credits</button>
               </div>
             </div>
@@ -102,6 +121,14 @@
     </main>
   </div>
 </div>
+<!-- Character Picker Modal (per chapter) -->
+<app-character-picker-modal 
+  [open]="pickerOpen"
+  [excludeIds]="chapterCharacterIds"
+  [excludeImages]="chapterCharacterImages"
+  (close)="onPickerClose()"
+  (pick)="onPicked($event)">
+</app-character-picker-modal>
 
 <!-- eBook Viewer -->
 <app-ebook-viewer 
@@ -114,12 +141,28 @@
 
 <!-- Edit Chapter Modal -->
 <div *ngIf="showEditModal" class="modal-overlay" (click)="closeEditModal()">
-  <div class="modal-content" (click)="$event.stopPropagation()">
+  <div class="modal-content" (click)="onAnyModalClick($event)">
     <div class="modal-header">
       <h3>Edit Chapter {{ (editingChapterIndex || 0) + 1 }}</h3>
       <button class="close-btn" (click)="closeEditModal()">&times;</button>
     </div>
     <div class="modal-body">
+      <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.4rem; margin-bottom:0.75rem;">
+        <span *ngFor="let ch of chapterCharacters" style="display:inline-flex; align-items:center; gap:0.35rem; padding:0.25rem 0.5rem; background:#f5f1ff; border:1px solid #e8e1ff; border-radius:999px;">
+          <img *ngIf="ch.image" [src]="ch.image" alt="char" style="width:22px; height:22px; object-fit:cover; border-radius:50%;"/>
+          <span style="font-size:0.85rem; color:#4b5563;">{{ ch.name || ('#' + ch.id) }}</span>
+          <button type="button" (click)="removeCharacter(ch.id)" aria-label="Remove character" title="Remove" style="background:transparent; border:none; color:#6b7280; cursor:pointer; font-weight:700; line-height:1;">×</button>
+        </span>
+        <button 
+          *ngIf="chapterCharacterIds.length < 3"
+          class="small" 
+          (click)="openCharacterPicker()" 
+          title="Add character"
+          style="width:32px;height:32px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;">
+          +
+        </button>
+        <span *ngIf="chapterCharacterIds.length >= 3" style="font-size:0.85rem;color:#6b7280;">To add, remove another character</span>
+      </div>
       <div class="form-group">
         <label for="editPrompt">Chapter Prompt:</label>
         <textarea 
@@ -136,13 +179,17 @@
       <button class="dashboard-btn" (click)="saveEditedChapter()" [disabled]="loadingEdit || !editPrompt.value?.trim()">
         {{ loadingEdit ? 'Regenerating...' : 'Regenerate Chapter' }}
       </button>
+      <button type="button" class="info-icon" (click)="toggleCredit('Costs ' + creditChapterCost + ' credits', $event); $event.stopPropagation()">ⓘ</button>
     </div>
   </div>
 </div>
 
+<!-- Small cost modal (click outside to close) -->
+<app-credit-hint [open]="showCostModal" [text]="costText" [top]="costTop" [left]="costLeft" (requestClose)="closeCostModal()"></app-credit-hint>
+  
 <!-- Regenerate Image Modal -->
 <div *ngIf="showRegenImageModal" class="modal-overlay" (click)="closeRegenImageModal()">
-  <div class="modal-content" (click)="$event.stopPropagation()">
+  <div class="modal-content" (click)="onAnyModalClick($event)">
     <div class="modal-header">
       <h3>Regenerate Image {{ (regenImageIndex || 0) + 1 }}</h3>
       <button class="close-btn" (click)="closeRegenImageModal()">&times;</button>
@@ -164,6 +211,7 @@
       <button class="dashboard-btn" (click)="submitRegenImage()" [disabled]="loadingImageEdit || !imageEditPrompt.value?.trim()">
         {{ loadingImageEdit ? 'Regenerating…' : 'Regenerate Image' }}
       </button>
+      <button type="button" class="info-icon" (click)="toggleCredit('Costs 1 credit', $event); $event.stopPropagation()">ⓘ</button>
     </div>
   </div>
 </div>

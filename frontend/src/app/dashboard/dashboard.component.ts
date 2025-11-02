@@ -25,12 +25,19 @@ export class DashboardComponent implements OnInit {
   router = inject(Router);
   user = this.auth.user$.value;
   initialImagesFromNav: string[] = [];
+  initialSeedFromNav: string = '';
+  initialLanguageFromNav: string = '';
+  initialCharactersFromNav: Array<{ id:number; name?: string | null }> = [];
 
   // Co-creator state (English)
   phase: 'seed' | 'chapter' | 'final' = 'seed';
   
   error = '';
   showAddCredits = false;
+  // Credits purchase feedback
+  creditsPurchased = false;
+  purchasedCredits = 0;
+  totalCredits = 0;
 
 
   // Seed and user continuation (legacy continuation kept for convenience)
@@ -59,10 +66,18 @@ export class DashboardComponent implements OnInit {
       this.auth.fetchMe().subscribe({ next: u => this.user = u });
     }
     this.loadStories();
-    // Read images passed from character builder
+    // Read prefill data passed from story page
     try {
       const state: any = (history && history.state) || {};
-      if (Array.isArray(state.images)) this.initialImagesFromNav = state.images.filter(Boolean);
+      if (typeof state.seed === 'string') this.initialSeedFromNav = (state.seed || '').trim();
+      if (typeof state.language === 'string') this.initialLanguageFromNav = state.language || '';
+      const imgs = Array.isArray(state.character_images) ? state.character_images : (Array.isArray(state.images) ? state.images : []);
+      if (Array.isArray(imgs)) this.initialImagesFromNav = imgs.filter((s: any) => typeof s === 'string');
+      if (Array.isArray(state.characters)) {
+        this.initialCharactersFromNav = state.characters
+          .filter((c: any) => c && Number.isFinite(Number(c.id)))
+          .map((c: any) => ({ id: Number(c.id), name: (typeof c.name === 'string' ? c.name : null) }));
+      }
     } catch {}
     // Listen for header add-credits request
     window.addEventListener('open-add-credits', this.openAddCreditsFromHeader);
@@ -97,11 +112,16 @@ export class DashboardComponent implements OnInit {
   setFilter(f: 'all'|'in_progress'|'finished') { this.filter = f; }
 
   onAddCredits(plan: 'starter'|'pro'|'max') {
-    this.auth.addCredits(plan).subscribe({ next: () => { this.showAddCredits = false; this.error = ''; }, error: () => {} });
+    this.auth.addCredits(plan).subscribe({ next: (res) => { 
+      this.error = '';
+      this.purchasedCredits = Number((res as any)?.added) || 0;
+      this.totalCredits = Number((res as any)?.credits) || Number(this.auth.user$.value?.credits) || 0;
+      this.creditsPurchased = true; 
+    }, error: () => {} });
   }
 
   closeAddCreditsModal() {
-    this.showAddCredits = false;
+    this.showAddCredits = false; this.creditsPurchased = false; this.purchasedCredits = 0; this.totalCredits = 0;
   }
 
   ngOnDestroy(): void {

@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { CharacterPickerModalComponent } from '../shared/character-picker-modal.component';
+import { CreditHintComponent } from '../shared/credit-hint.component';
+import { AddCreditsModalComponent } from '../shared/add-credits-modal.component';
 import { NavComponent } from '../shared/nav.component';
 import { HeaderComponent } from '../shared/header.component';
 import { ConfirmationModalComponent } from '../shared/confirmation-modal.component';
@@ -12,12 +14,13 @@ import { Router } from '@angular/router';
 @Component({
   standalone: true,
   selector: 'app-characters',
-  imports: [CommonModule, HttpClientModule, FormsModule, NavComponent, HeaderComponent, ConfirmationModalComponent, CharacterPickerModalComponent],
+  imports: [CommonModule, HttpClientModule, FormsModule, NavComponent, HeaderComponent, ConfirmationModalComponent, CharacterPickerModalComponent, AddCreditsModalComponent, CreditHintComponent],
   template: `
     <app-nav></app-nav>
     <app-header></app-header>
     <div class="dashboard-container main-with-sidebar">
       <div class="characters-section">
+        <app-add-credits-modal *ngIf="showAddCredits" (closeModal)="onCloseCreditsModal()" (choosePlan)="onAddCredits($event)" [successMode]="creditsPurchased" [purchasedCredits]="purchasedCredits" [totalCredits]="totalCredits"></app-add-credits-modal>
         <div style="display:flex; align-items:center; justify-content: space-between; gap: 1rem;">
           <h1>My Characters</h1>
           <button class="solid" (click)="openPicker()">+ New Character</button>
@@ -72,7 +75,7 @@ import { Router } from '@angular/router';
     
     <!-- Edit Modal -->
     <div class="edit-modal-overlay" *ngIf="showEditModal" (click)="closeEdit()">
-      <div class="edit-modal" (click)="$event.stopPropagation()">
+      <div class="edit-modal" (click)="onEditModalClick($event)">
         <div class="edit-header">
           <h3>Edit Character</h3>
           <button class="close" (click)="closeEdit()">×</button>
@@ -98,7 +101,7 @@ import { Router } from '@angular/router';
                 </label>
                 <div class="row">
                   <button class="solid" (click)="regenerateCharacterImage()" [disabled]="saving">{{ saving ? 'Generating…' : 'Generate' }}</button>
-                  <button class="outline" (click)="cancelEditingImage()" [disabled]="saving">Cancel</button>
+                  <button type="button" class="info-icon" (click)="toggleCost('Costs 1 credit', $event); $event.stopPropagation()">ⓘ</button>
                 </div>
               </div>
             </div>
@@ -110,6 +113,9 @@ import { Router } from '@angular/router';
         </div>
       </div>
     </div>
+
+    <!-- Small credit hint popover -->
+    <app-credit-hint [open]="showCostModal" [text]="costText" [top]="costTop" [left]="costLeft" (requestClose)="closeCost()"></app-credit-hint>
   `,
   styles: [
     `
@@ -224,6 +230,16 @@ export class CharactersComponent {
   editingImage = false;
   editPrompt: string = '';
   saving = false;
+  showAddCredits = false;
+  // Credits purchase feedback
+  creditsPurchased = false;
+  purchasedCredits = 0;
+  totalCredits = 0;
+  // Credit hint state
+  showCostModal = false;
+  costText = '';
+  costTop = 0;
+  costLeft = 0;
   // Picker state
   pickerOpen = false;
 
@@ -326,10 +342,56 @@ export class CharactersComponent {
             this.cdr.detectChanges();
           }
         },
-        error: () => { this.saving = false; },
+        error: (err) => { this.saving = false; if (err && err.status === 402) { this.showAddCredits = true; } },
         complete: () => { this.saving = false; }
       });
   }
+
+  // Credit hint handlers
+  openCost(msg: string, ev?: MouseEvent) {
+    this.costText = msg;
+    try {
+      const target = (ev?.currentTarget || ev?.target) as HTMLElement | undefined;
+      if (target) {
+        const rect = target.getBoundingClientRect();
+        this.costTop = Math.min(window.innerHeight - 40, rect.bottom + 8);
+        this.costLeft = Math.min(window.innerWidth - 220, Math.max(8, rect.left));
+      } else {
+        this.costTop = 80; this.costLeft = 80;
+      }
+    } catch { this.costTop = 80; this.costLeft = 80; }
+    this.showCostModal = true;
+  }
+  toggleCost(msg: string, ev: MouseEvent) {
+    const target = (ev?.currentTarget || ev?.target) as HTMLElement | undefined;
+    let samePos = false;
+    try {
+      if (target) {
+        const rect = target.getBoundingClientRect();
+        const top = Math.min(window.innerHeight - 40, rect.bottom + 8);
+        const left = Math.min(window.innerWidth - 220, Math.max(8, rect.left));
+        samePos = Math.abs(top - this.costTop) < 2 && Math.abs(left - this.costLeft) < 2;
+        this.costTop = top; this.costLeft = left;
+      }
+    } catch {}
+    if (this.showCostModal && samePos && this.costText === msg) {
+      this.closeCost();
+    } else {
+      this.openCost(msg, ev);
+    }
+  }
+  closeCost() { this.showCostModal = false; this.costText = ''; }
+  onEditModalClick(event: MouseEvent) { event.stopPropagation(); if (this.showCostModal) this.closeCost(); }
+
+  onAddCredits(plan: 'starter'|'pro'|'max') {
+    this.auth.addCredits(plan).subscribe({ next: (res) => { 
+      this.purchasedCredits = Number((res as any)?.added) || 0;
+      this.totalCredits = Number((res as any)?.credits) || Number(this.auth.user$.value?.credits) || 0;
+      this.creditsPurchased = true; 
+    }, error: () => {} });
+  }
+
+  onCloseCreditsModal() { this.showAddCredits = false; this.creditsPurchased = false; this.purchasedCredits = 0; this.totalCredits = 0; }
 
   saveCharacter() {
     if (!this.editingCharacter) return;

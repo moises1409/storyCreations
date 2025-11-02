@@ -1,3 +1,14 @@
+/* Tooltip styles for credit info */
+.info-icon { background: transparent; border: 1px solid var(--border-light); color: #6b7280; border-radius: 50%; width: 22px; height: 22px; display:inline-flex; align-items:center; justify-content:center; cursor: pointer; }
+.info-icon:hover { background: rgba(0,0,0,0.04); }
+.credit-tooltip { margin-left: 0.35rem; font-size: 0.8rem; color: #374151; background: #ffffff; border: 1px solid #e5e7eb; padding: 0.15rem 0.45rem; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+/* Mini modal for credits */
+.mini-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 4000; }
+.mini-modal { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index: 4001; }
+.mini-modal-card { background: var(--background-light); border: 2px solid var(--border-light); border-radius: 12px; padding: 0.6rem 0.9rem; width: max-content; max-width: 80vw; box-shadow: 0 20px 60px var(--shadow-medium); }
+.mini-modal-body { color: var(--text-dark); font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 0.9rem; }
+/* Popover positioned near trigger */
+.cost-popover { position: fixed; z-index: 5000; background: var(--background-light); color: var(--text-dark); border: 2px solid var(--border-light); border-radius: 10px; padding: 0.4rem 0.6rem; box-shadow: 0 12px 30px var(--shadow-medium); font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 0.9rem; }
 /* Reuse dashboard styles; only overrides if needed */
 .small.selected { border-color: var(--primary-pink); background: rgba(255, 111, 145, 0.1); }
 

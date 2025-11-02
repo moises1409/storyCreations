@@ -2,6 +2,8 @@ import { Component, Input, Output, EventEmitter, OnInit, OnChanges, HostListener
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
 import { AuthService } from '../auth/auth.service';
+import { ConfirmationModalComponent } from './confirmation-modal.component';
+import { AddCreditsModalComponent } from './add-credits-modal.component';
 
 interface Chapter {
   id: string | number;
@@ -17,10 +19,19 @@ interface Chapter {
 @Component({
   standalone: true,
   selector: 'app-ebook-viewer',
-  imports: [CommonModule, HttpClientModule],
+  imports: [CommonModule, HttpClientModule, AddCreditsModalComponent, ConfirmationModalComponent],
   template: `
     <div class="ebook-overlay" *ngIf="open" (click)="onBackdrop($event)">
       <div class="ebook-container" (click)="$event.stopPropagation()">
+        <app-confirmation-modal 
+          *ngIf="showAudioCreditConfirm" 
+          [title]="'Generate audio'"
+          [message]="'This will use ' + requiredAudioCredits + ' credits. Do you want to proceed?'"
+          [confirmText]="'Generate'"
+          (confirm)="confirmGenerateAllAudio()" 
+          (cancel)="closeAudioConfirm()" 
+          (close)="closeAudioConfirm()"></app-confirmation-modal>
+        <app-add-credits-modal *ngIf="showAddCredits" (closeModal)="onCloseCreditsModal()" (choosePlan)="onAddCredits($event)" [successMode]="creditsPurchased" [purchasedCredits]="purchasedCredits" [totalCredits]="totalCredits"></app-add-credits-modal>
         <!-- Header -->
         <div class="ebook-header">
           <h2 class="ebook-title">{{ storyTitle }}</h2>
@@ -824,6 +835,15 @@ export class EbookViewerComponent implements OnInit, OnChanges {
   generatingAllAudio = false;
   private audioPollTimer: any = null;
   private audioReadyCount = 0;
+  // Audio credit confirmation
+  showAudioCreditConfirm = false;
+  requiredAudioCredits = 0;
+  creditAudioCost = 1;
+  // Credits modal state
+  showAddCredits = false;
+  creditsPurchased = false;
+  purchasedCredits = 0;
+  totalCredits = 0;
   
   // Share properties
   showShareModal = false;
@@ -840,6 +860,12 @@ export class EbookViewerComponent implements OnInit, OnChanges {
   
   ngOnInit() {
     this.calculateTotalPages();
+    // Fetch credit costs
+    try {
+      const headers = this.auth.token ? { Authorization: `Bearer ${this.auth.token}` } : undefined;
+      this.http.get<{ chapter:number; audio:number; image?: number }>(`${this.auth.baseUrl}/billing/credit-costs`, { headers })
+        .subscribe({ next: (res) => { this.creditAudioCost = Number(res?.audio) || 1; }, error: () => {} });
+    } catch {}
   }
   
   ngOnChanges() {
@@ -903,7 +929,10 @@ export class EbookViewerComponent implements OnInit, OnChanges {
   onPrimaryAction() {
     if (this.generatingAllAudio) return;
     if (!this.isPublic && this.missingAudioExists()) {
-      this.generateAllAudioForStory();
+      // Open credit confirmation first using configured audio cost
+      const missing = this.chapters.filter(ch => !ch.audioUrl || ch.audioUrl.trim() === '').length;
+      this.requiredAudioCredits = missing * Math.max(1, this.creditAudioCost);
+      this.showAudioCreditConfirm = true;
       return;
     }
     if (this.allAudioReady()) {
@@ -911,6 +940,9 @@ export class EbookViewerComponent implements OnInit, OnChanges {
       return;
     }
   }
+
+  closeAudioConfirm() { this.showAudioCreditConfirm = false; }
+  confirmGenerateAllAudio() { this.showAudioCreditConfirm = false; this.generateAllAudioForStory(); }
   
   nextPage() {
     if (this.currentPage < this.totalPages && !this.isTurning) {
@@ -1106,6 +1138,9 @@ export class EbookViewerComponent implements OnInit, OnChanges {
         error: (err) => {
           console.error('Failed to generate all audio', err);
           this.generatingAllAudio = false;
+          if (err && err.status === 402) {
+            this.showAddCredits = true;
+          }
         }
       });
   }
@@ -1156,6 +1191,16 @@ export class EbookViewerComponent implements OnInit, OnChanges {
       this.audioPollTimer = null;
     }
   }
+  
+  onAddCredits(plan: 'starter'|'pro'|'max') {
+    this.auth.addCredits(plan).subscribe({ next: (res) => {
+      const planMap: any = { starter: 50, pro: 100, max: 150 };
+      this.purchasedCredits = planMap[plan] || 0;
+      this.totalCredits = Number(res?.credits) || Number(this.auth.user$.value?.credits) || 0;
+      this.creditsPurchased = true;
+    }, error: () => {} });
+  }
+  onCloseCreditsModal() { this.showAddCredits = false; this.creditsPurchased = false; this.purchasedCredits = 0; this.totalCredits = 0; }
   
   private playPreGeneratedAudio(audioUrl: string) {
     console.log('Playing pre-generated audio');

@@ -1,36 +1,36 @@
-import { Component, EventEmitter, Output } from '@angular/core';
+import { Component, EventEmitter, Output, Input, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient, HttpClientModule } from '@angular/common/http';
+import { AuthService } from '../auth/auth.service';
 
 @Component({
   standalone: true,
   selector: 'app-add-credits-modal',
-  imports: [CommonModule],
+  imports: [CommonModule, HttpClientModule],
   template: `
 <div class="modal-root" (click)="close()">
   <div class="modal-card" (click)="$event.stopPropagation()">
-  <h2 class="modal-title">Upgrade your plan</h2>
-  <p class="modal-sub">Choose a credit pack to continue creating stories.</p>
-  <div class="plans">
-    <div class="plan">
-      <div class="plan-title">Starter</div>
-      <div class="plan-credits">50 credits</div>
-      <div class="plan-price">10 CHF</div>
-      <button class="dashboard-btn" (click)="select('starter')">Add credits</button>
+  <ng-container *ngIf="!successMode; else successTpl">
+    <h2 class="modal-title">Upgrade your plan</h2>
+    <p class="modal-sub">Choose a credit pack to continue creating stories.</p>
+    <div class="plans">
+      <div class="plan" [class.featured]="i===1" *ngFor="let p of plans; index as i">
+        <div class="plan-title">{{ p.name }}</div>
+        <div class="plan-credits">{{ p.credits }} credits</div>
+        <div class="plan-price">{{ p.price }} {{ p.currency }}</div>
+        <button class="dashboard-btn" (click)="select(p.id)">Add credits</button>
+      </div>
     </div>
-    <div class="plan featured">
-      <div class="plan-title">Pro</div>
-      <div class="plan-credits">100 credits</div>
-      <div class="plan-price">17 CHF</div>
-      <button class="dashboard-btn" (click)="select('pro')">Add credits</button>
-    </div>
-    <div class="plan">
-      <div class="plan-title">Max</div>
-      <div class="plan-credits">150 credits</div>
-      <div class="plan-price">25 CHF</div>
-      <button class="dashboard-btn" (click)="select('max')">Add credits</button>
-    </div>
-  </div>
-  <div class="modal-actions"><button class="small" (click)="close()">Close</button></div>
+    <div class="modal-actions"><button class="small" (click)="close()">Close</button></div>
+  </ng-container>
+  <ng-template #successTpl>
+    <h2 class="modal-title">Credits added</h2>
+    <p class="modal-sub" *ngIf="purchasedCredits && totalCredits">
+      You added <strong>{{ purchasedCredits }}</strong> credits. Your total is now <strong>{{ totalCredits }}</strong>.
+    </p>
+    <p class="modal-sub" *ngIf="!purchasedCredits || !totalCredits">Your credits have been updated.</p>
+    <div class="modal-actions"><button class="dashboard-btn" (click)="close()">OK</button></div>
+  </ng-template>
 </div>
 </div>
 `,
@@ -56,9 +56,29 @@ import { CommonModule } from '@angular/common';
 @media (max-width: 720px) { .plans { grid-template-columns: 1fr; } }
 `]
 })
-export class AddCreditsModalComponent {
+export class AddCreditsModalComponent implements OnInit {
+  private http = inject(HttpClient);
+  auth = inject(AuthService);
+  @Input() successMode: boolean = false;
+  @Input() purchasedCredits?: number;
+  @Input() totalCredits?: number;
   @Output() closeModal = new EventEmitter<void>();
   @Output() choosePlan = new EventEmitter<'starter' | 'pro' | 'max'>();
+
+  plans: Array<{ id:'starter'|'pro'|'max'; name:string; credits:number; price:string; currency:string }> = [
+    { id:'starter', name:'Starter', credits:50, price:'10', currency:'CHF' },
+    { id:'pro', name:'Pro', credits:100, price:'17', currency:'CHF' },
+    { id:'max', name:'Max', credits:150, price:'25', currency:'CHF' },
+  ];
+
+  ngOnInit(): void {
+    const apply = (res: any) => { if (res && Array.isArray(res.plans) && res.plans.length) this.plans = res.plans as any; };
+    try {
+      const base = (this.auth && this.auth.baseUrl) ? this.auth.baseUrl : `${window.location.protocol}//${window.location.host}`;
+      this.http.get<{ plans: Array<{ id:'starter'|'pro'|'max'; name:string; credits:number; price:string; currency:string }> }>(`${base}/billing/plans`)
+        .subscribe({ next: (res) => apply(res), error: () => {} });
+    } catch {}
+  }
 
   close() { this.closeModal.emit(); }
   select(plan: 'starter'|'pro'|'max') { this.choosePlan.emit(plan); }

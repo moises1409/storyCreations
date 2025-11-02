@@ -6,10 +6,10 @@
 
     <!-- Main area (cards list or story workspace) -->
     <main class="main">
-      <app-add-credits-modal *ngIf="showAddCredits" (closeModal)="closeAddCreditsModal()" (choosePlan)="onAddCredits($event)"></app-add-credits-modal>
+      <app-add-credits-modal *ngIf="showAddCredits" (closeModal)="closeAddCreditsModal()" (choosePlan)="onAddCredits($event)" [successMode]="creditsPurchased" [purchasedCredits]="purchasedCredits" [totalCredits]="totalCredits"></app-add-credits-modal>
       <!-- Seed view: question + CTA -->
       <ng-container *ngIf="phase==='seed'">
-        <app-generate-story-widget (generate)="onGenerate($event)" [initialImages]="initialImagesFromNav"></app-generate-story-widget>
+        <app-generate-story-widget (generate)="onGenerate($event)" [initialImages]="initialImagesFromNav" [initialSeed]="initialSeedFromNav" [initialLanguage]="initialLanguageFromNav" [initialCharacters]="initialCharactersFromNav"></app-generate-story-widget>
 
         <!-- Recent creations section (full width) -->
         <section class="recent-section">
